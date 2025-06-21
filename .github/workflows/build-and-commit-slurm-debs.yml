@@ -60,6 +60,7 @@ jobs:
       - name: 📥 Download and Extract Slurm Source
         if: steps.version-check.outputs.skip_build == 'false'
         run: |
+          echo "${{ steps.slurm-version.outputs.tarball_url }}"
           mkdir -p /tmp/slurm && cd /tmp/slurm
           curl -L "${{ steps.slurm-version.outputs.tarball_url }}" -o slurm.tar.gz
           tar -xzf slurm.tar.gz
