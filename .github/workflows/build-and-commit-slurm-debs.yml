@@ -15,6 +15,19 @@ jobs:
         with:
           fetch-depth: 0
 
+
+      - name: 🧠 Get Latest Kernel Version from apt
+        id: kernel
+        run: |
+          sudo apt-get update
+
+          KERNEL_VERSION=$(apt-cache search ^linux-image-[0-9]+.*-generic$ \
+            | grep -Eo 'linux-image-[0-9]+\.[0-9]+\.[0-9]+-[0-9]+-generic' \
+            | sort -V | tail -n1 | sed 's/linux-image-//')
+
+          echo "Latest kernel: $KERNEL_VERSION"
+          echo "KERNEL_VERSION=$KERNEL_VERSION" >> $GITHUB_OUTPUT
+
       - name: 🔍 Detect Latest Stable Slurm Version
         id: slurm-version
         run: |
