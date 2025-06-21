@@ -22,15 +22,18 @@ jobs:
       - name: 🛑 Check if DEBs for this version already exist
         id: version-check
         run: |
-          mkdir -p slurm-debs
           version="${{ steps.slurm-version.outputs.version }}"
+          mkdir -p slurm-debs
           count=$(find slurm-debs -type f -name "*${version}_u2404.deb" | wc -l || true)
+
+          echo "File count: $count"
           if [ "$count" -gt 0 ]; then
             echo "DEBs for Slurm $version already exist. Skipping build."
             echo "skip_build=true" >> $GITHUB_OUTPUT
           else
             echo "No existing DEBs for Slurm $version. Proceeding with build."
             echo "skip_build=false" >> $GITHUB_OUTPUT
+          fi
 
       - name: 🛠 Install Build Dependencies
         if: steps.version-check.outputs.skip_build == 'false'
