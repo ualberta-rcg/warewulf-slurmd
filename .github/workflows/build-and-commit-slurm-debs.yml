@@ -16,12 +16,13 @@ jobs:
       - name: 🔍 Detect Latest Stable Slurm Version
         id: slurm-version
         run: |
-          info=$(curl -s https://api.github.com/repos/SchedMD/slurm/releases/latest)
-          version=$(echo "$info" | jq -r .tag_name | sed 's/^slurm-//')
-          url=$(echo "$info" | jq -r .tarball_url)
+          tag=$(curl -s https://api.github.com/repos/SchedMD/slurm/tags | jq -r '.[0].name')
+          version=$(echo "$tag" | sed 's/^slurm-//')
+          tarball_url="https://codeload.github.com/SchedMD/slurm/tar.gz/refs/tags/${tag}"
 
+          echo "Latest tag: $tag"
           echo "version=$version" >> $GITHUB_OUTPUT
-          echo "tarball_url=$url" >> $GITHUB_OUTPUT
+          echo "tarball_url=$tarball_url" >> $GITHUB_OUTPUT
 
       - name: 🛑 Check if DEBs for this version already exist
         id: version-check
