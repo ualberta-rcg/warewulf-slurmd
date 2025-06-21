@@ -37,7 +37,16 @@ jobs:
           debver="$(echo "$version" | sed 's/^\([0-9]*\)-\([0-9]*\)-\([0-9]*\)-\([0-9]*\)$/\1.\2.\3-\4/')"
           debdir="$GITHUB_WORKSPACE/slurm-debs"
 
+          echo "🔍 Inputs:"
+          echo "  Raw version       = $version"
+          echo "  Debian version    = $debver"
+          echo "  Search directory  = $debdir"
+          echo "  Search pattern    = *${debver}_u2404.deb"
+
           mkdir -p "$debdir"
+          echo "📂 Directory contents before search:"
+          ls -l "$debdir" || true
+
           count=$(find "$debdir" -type f -name "*${debver}_u2404.deb" | wc -l || true)
 
           if [ "$count" -gt 0 ]; then
@@ -47,6 +56,7 @@ jobs:
             echo "🚧 No existing DEBs for Slurm $version. Proceeding with build."
             echo "skip_build=false" >> $GITHUB_OUTPUT
           fi
+
 
       - name: 🛠 Install Build Dependencies
         if: steps.version-check.outputs.skip_build == 'false'
