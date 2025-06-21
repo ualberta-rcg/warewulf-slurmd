@@ -34,16 +34,26 @@ jobs:
         id: version-check
         run: |
           version="${{ steps.slurm-version.outputs.version }}"
-          debver="${version//-/.}"  # Replace dashes with dots
+          debver="${version//-/.}"  # Convert dashes to dots
+          debdir="$GITHUB_WORKSPACE/slurm-debs"
 
-          mkdir -p slurm-debs
-          count=$(find slurm-debs -type f -name "*${debver}_u2404.deb" | wc -l || true)
+          echo "🔍 Inputs:"
+          echo "  Raw version       = $version"
+          echo "  Debian version    = $debver"
+          echo "  Search directory  = $debdir"
+          echo "  Search pattern    = *${debver}_u2404.deb"
+
+          mkdir -p "$debdir"
+          echo "📂 Directory contents before search:"
+          ls -l "$debdir" || true
+
+          count=$(find "$debdir" -type f -name "*${debver}_u2404.deb" | wc -l || true)
 
           if [ "$count" -gt 0 ]; then
-            echo "DEBs for Slurm $version already exist. Skipping build."
+            echo "✅ DEBs for Slurm $version already exist. Skipping build."
             echo "skip_build=true" >> $GITHUB_OUTPUT
           else
-            echo "No existing DEBs for Slurm $version. Proceeding with build."
+            echo "🚧 No existing DEBs for Slurm $version. Proceeding with build."
             echo "skip_build=false" >> $GITHUB_OUTPUT
           fi
 
