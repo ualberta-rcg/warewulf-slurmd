@@ -41,13 +41,13 @@ jobs:
           echo "  Raw version       = $version"
           echo "  Debian version    = $debver"
           echo "  Search directory  = $debdir"
-          echo "  Search pattern    = *${debver}_u2404.deb"
+          echo "  Search pattern    = *_${debver}_*_u2404.deb"
 
           mkdir -p "$debdir"
           echo "📂 Directory contents before search:"
           ls -l "$debdir" || true
 
-          count=$(find "$debdir" -type f -name "*${debver}_u2404.deb" | wc -l || true)
+          count=$(find "$debdir" -type f -name "*_${debver}_*_u2404.deb" | wc -l || true)
 
           if [ "$count" -gt 0 ]; then
             echo "✅ DEBs for Slurm $version already exist. Skipping build."
