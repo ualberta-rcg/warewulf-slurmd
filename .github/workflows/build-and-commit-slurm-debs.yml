@@ -1,7 +1,9 @@
 name: Build and Commit Slurm DEB Packages
 
 on:
-  workflow_dispatch:
+  workflow_dispatch:    # manual trigger
+  schedule:
+    - cron: '0 3 1 * *'  # every month on the 1st at 03:00 UTC
 
 jobs:
   build-debs:
