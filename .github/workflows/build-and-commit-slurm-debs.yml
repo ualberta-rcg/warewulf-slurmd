@@ -36,6 +36,7 @@ jobs:
           else
             echo "No existing DEBs for Slurm $version. Proceeding with build."
             echo "skip_build=false" >> $GITHUB_OUTPUT
+          fi
 
       - name: 🛠 Install Build Dependencies
         if: steps.version-check.outputs.skip_build == 'false'
