@@ -1,0 +1,86 @@
+name: Build and Commit Slurm DEB Packages
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-debs:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: 📦 Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 🔍 Detect Latest Stable Slurm Version
+        id: slurm-version
+        run: |
+          version=$(curl -s https://api.github.com/repos/SchedMD/slurm/releases/latest | jq -r .tag_name | sed 's/^slurm-//')
+          echo "version=$version" >> $GITHUB_OUTPUT
+
+      - name: 🛑 Check if DEBs for this version already exist
+        id: version-check
+        run: |
+          mkdir -p slurm-debs
+          version="${{ steps.slurm-version.outputs.version }}"
+          count=$(find slurm-debs -type f -name "*${version}_u2404.deb" | wc -l || true)
+          if [ "$count" -gt 0 ]; then
+            echo "DEBs for Slurm $version already exist. Skipping build."
+            echo "skip_build=true" >> $GITHUB_OUTPUT
+          else
+            echo "No existing DEBs for Slurm $version. Proceeding with build."
+            echo "skip_build=false" >> $GITHUB_OUTPUT
+
+      - name: 🛠 Install Build Dependencies
+        if: steps.version-check.outputs.skip_build == 'false'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            devscripts \
+            equivs \
+            build-essential \
+            fakeroot \
+            debhelper \
+            curl \
+            jq \
+            libpmix-dev \
+            libpmix2 \
+            libopenmpi-dev \
+            libopenmpi3 \
+            openmpi-bin
+
+      - name: 📥 Download and Extract Slurm Source
+        if: steps.version-check.outputs.skip_build == 'false'
+        run: |
+          mkdir -p /tmp/slurm && cd /tmp/slurm
+          curl -LO https://github.com/SchedMD/slurm/archive/refs/tags/slurm-${{ steps.slurm-version.outputs.version }}.tar.gz
+          tar -xzf slurm-${{ steps.slurm-version.outputs.version }}.tar.gz
+          mv slurm-slurm-${{ steps.slurm-version.outputs.version }} slurm-src
+
+      - name: 📦 Build Slurm DEBs
+        if: steps.version-check.outputs.skip_build == 'false'
+        run: |
+          cd /tmp/slurm/slurm-src
+          sudo mk-build-deps -ir --tool='apt-get -qq -y --no-install-recommends' debian/control
+          debuild -b -uc -us
+
+      - name: 📁 Rename and Move DEBs to Repo
+        if: steps.version-check.outputs.skip_build == 'false'
+        run: |
+          mkdir -p $GITHUB_WORKSPACE/slurm-debs
+          for deb in /tmp/slurm/*.deb; do
+            base=$(basename "$deb" .deb)
+            mv "$deb" "$GITHUB_WORKSPACE/slurm-debs/${base}_u2404.deb"
+          done
+
+      - name: 📤 Commit and Push DEBs
+        if: steps.version-check.outputs.skip_build == 'false'
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add slurm-debs/
+          git commit -m "Add Slurm DEBs (v${{ steps.slurm-version.outputs.version }}) for Ubuntu 24.04" || echo "No changes to commit"
+          git push origin main
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
