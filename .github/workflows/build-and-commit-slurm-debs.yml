@@ -29,24 +29,15 @@ jobs:
           echo "Detected Slurm version: $version"
           echo "version=$version" >> $GITHUB_OUTPUT
           echo "tarball_url=$tarball_url" >> $GITHUB_OUTPUT
-
+          
       - name: 🛑 Check if DEBs for this version already exist
         id: version-check
         run: |
           version="${{ steps.slurm-version.outputs.version }}"
-          debver="${version//-/.}"  # Convert dashes to dots
+          debver="$(echo "$version" | sed 's/^\([0-9]*\)-\([0-9]*\)-\([0-9]*\)-\([0-9]*\)$/\1.\2.\3-\4/')"
           debdir="$GITHUB_WORKSPACE/slurm-debs"
 
-          echo "🔍 Inputs:"
-          echo "  Raw version       = $version"
-          echo "  Debian version    = $debver"
-          echo "  Search directory  = $debdir"
-          echo "  Search pattern    = *${debver}_u2404.deb"
-
           mkdir -p "$debdir"
-          echo "📂 Directory contents before search:"
-          ls -l "$debdir" || true
-
           count=$(find "$debdir" -type f -name "*${debver}_u2404.deb" | wc -l || true)
 
           if [ "$count" -gt 0 ]; then
