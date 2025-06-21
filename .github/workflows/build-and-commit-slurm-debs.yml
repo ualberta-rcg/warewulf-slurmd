@@ -34,8 +34,10 @@ jobs:
         id: version-check
         run: |
           version="${{ steps.slurm-version.outputs.version }}"
+          debver="${version//-/.}"  # Replace dashes with dots
+
           mkdir -p slurm-debs
-          count=$(find slurm-debs -type f -name "*${version}_u2404.deb" | wc -l || true)
+          count=$(find slurm-debs -type f -name "*${debver}_u2404.deb" | wc -l || true)
 
           if [ "$count" -gt 0 ]; then
             echo "DEBs for Slurm $version already exist. Skipping build."
