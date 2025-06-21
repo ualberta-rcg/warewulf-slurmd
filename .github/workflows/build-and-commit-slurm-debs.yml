@@ -16,11 +16,17 @@ jobs:
       - name: 🔍 Detect Latest Stable Slurm Version
         id: slurm-version
         run: |
-          tag=$(curl -s https://api.github.com/repos/SchedMD/slurm/tags | jq -r '.[0].name')
-          version=$(echo "$tag" | sed 's/^slurm-//')
-          tarball_url="https://codeload.github.com/SchedMD/slurm/tar.gz/refs/tags/${tag}"
+          tags=$(curl -s https://api.github.com/repos/SchedMD/slurm/tags | jq -r '.[].name')
+          
+          latest=$(echo "$tags" \
+            | grep -E '^slurm-[0-9]+-[0-9]+-[0-9]+-[0-9]+$' \
+            | sort -V \
+            | tail -n1)
 
-          echo "Latest tag: $tag"
+          version="${latest#slurm-}"
+          tarball_url="https://codeload.github.com/SchedMD/slurm/tar.gz/refs/tags/${latest}"
+
+          echo "Detected Slurm version: $version"
           echo "version=$version" >> $GITHUB_OUTPUT
           echo "tarball_url=$tarball_url" >> $GITHUB_OUTPUT
 
@@ -65,7 +71,7 @@ jobs:
           mkdir -p /tmp/slurm && cd /tmp/slurm
           curl -L "${{ steps.slurm-version.outputs.tarball_url }}" -o slurm.tar.gz
           tar -xzf slurm.tar.gz
-          src_dir=$(find . -maxdepth 1 -type d -name "SchedMD-slurm-*")
+          src_dir=$(find . -maxdepth 1 -type d -name "slurm-*")
           mv "$src_dir" slurm-src
 
       - name: 📦 Build Slurm DEBs
