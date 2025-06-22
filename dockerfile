@@ -138,12 +138,6 @@ RUN mkdir -p /etc/systemd/system && \
     ln -s /etc/systemd/system/rke2-server.service /etc/systemd/system/multi-user.target.wants/rke2-server.service && \
     mkdir -p /var/log/audit
 
-# --- 7. Create sysctl config for K8s networking ---
-RUN echo 'net.bridge.bridge-nf-call-iptables=1' >> /etc/sysctl.d/k8s.conf && \
-    echo 'net.bridge.bridge-nf-call-ip6tables=1' >> /etc/sysctl.d/k8s.conf && \
-    echo 'net.ipv4.ip_forward=1' >> /etc/sysctl.d/k8s.conf && \
-    sysctl --system || true
-
 # Enable root autologin on tty1
 RUN mkdir -p /etc/systemd/system/getty@tty1.service.d && \
     echo '[Service]' > /etc/systemd/system/getty@tty1.service.d/override.conf && \
