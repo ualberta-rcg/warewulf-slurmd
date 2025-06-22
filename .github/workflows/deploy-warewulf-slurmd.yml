@@ -1,0 +1,31 @@
+name: Build & Push Slurmd Warewulf Image
+
+on:
+  push:
+    branches:
+      - latest
+  workflow_dispatch: # Allows manual trigger in the Actions UI
+
+env:
+  TAG_NAME: ${{ github.ref_name }}
+
+jobs:
+  build-and-push:
+    name: Build & Push SlurmD WareWulf Image
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 🛠️ Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: 🐳 Build Docker Image
+        run: |
+          docker build -t ${{ secrets.DOCKER_HUB_REPO }}:$TAG_NAME .
+
+      - name: 🚀 Login to DockerHub
+        run: |
+          echo "${{ secrets.DOCKER_HUB_TOKEN }}" | docker login -u "${{ secrets.DOCKER_HUB_USER }}" --password-stdin
+
+      - name: 🚀 Push Image to DockerHub
+        run: |
+          docker push ${{ secrets.DOCKER_HUB_REPO }}:$TAG_NAME
