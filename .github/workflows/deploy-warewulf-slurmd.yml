@@ -15,6 +15,53 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+
+      - name: 🔧 Normalize Build Options
+        id: config
+        run: |
+          # Helper function to lowercase values
+          lower() { echo "$1" | tr '[:upper:]' '[:lower:]'; }
+
+          # Normalize DISABLE_AUTOLOGIN
+          val="$(lower "${{ vars.DISABLE_AUTOLOGIN }}")"
+          if [ "$val" = "1" ] || [ "$val" = "true" ]; then
+            echo "DISABLE_AUTOLOGIN=true" >> $GITHUB_OUTPUT
+          else
+            echo "DISABLE_AUTOLOGIN=false" >> $GITHUB_OUTPUT
+          fi
+
+          # Normalize NVIDIA_INSTALL_ENABLED
+          val="$(lower "${{ vars.NVIDIA_INSTALL_ENABLED }}")"
+          if [ "$val" = "1" ] || [ "$val" = "true" ]; then
+            echo "NVIDIA_INSTALL_ENABLED=true" >> $GITHUB_OUTPUT
+          else
+            echo "NVIDIA_INSTALL_ENABLED=false" >> $GITHUB_OUTPUT
+          fi
+
+          # Kernel version override
+          val="$(lower "${{ vars.KERNEL_VERSION_OVERRIDE }}")"
+          if [ "$val" != "0" ] && [ "$val" != "false" ] && [ -n "$val" ]; then
+            echo "KERNEL_VERSION=$val" >> $GITHUB_OUTPUT
+          else
+            echo "KERNEL_VERSION=latest" >> $GITHUB_OUTPUT
+          fi
+
+          # Slurm version override
+          val="$(lower "${{ vars.SLURM_VERSION_OVERRIDE }}")"
+          if [ "$val" != "0" ] && [ "$val" != "false" ] && [ -n "$val" ]; then
+            echo "SLURM_VERSION=$val" >> $GITHUB_OUTPUT
+          else
+            echo "SLURM_VERSION=latest" >> $GITHUB_OUTPUT
+          fi
+
+          # NVIDIA driver version override
+          val="$(lower "${{ vars.NVIDIA_DRIVER_VERSION_OVERRIDE }}")"
+          if [ "$val" != "0" ] && [ "$val" != "false" ] && [ -n "$val" ]; then
+            echo "NVIDIA_DRIVER_VERSION=$val" >> $GITHUB_OUTPUT
+          else
+            echo "NVIDIA_DRIVER_VERSION=auto" >> $GITHUB_OUTPUT
+          fi
+    
       - name: 🛠️ Checkout Repository
         uses: actions/checkout@v4
 
