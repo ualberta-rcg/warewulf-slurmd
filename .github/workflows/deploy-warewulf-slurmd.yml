@@ -9,22 +9,31 @@ on:
       SLURM_VERSION_OVERRIDE:
         description: 'Specific Slurm version (e.g., 24-11-5-1). Use "0" for latest.'
         required: false
-        # This will pre-fill the UI with the repo var's value, or '0' if not set.
-        default: ${{ vars.SLURM_VERSION_OVERRIDE || '0' }}
+        default: '0'
+      KERNEL_VERSION_OVERRIDE:
+        description: 'Specific kernel version to install (e.g., 6.8.0-31-generic). Use "0" for latest.'
+        required: false
+        default: '0'
+      DISABLE_AUTOLOGIN:
+        description: 'Disable console autologin (1=Yes, 0=No).'
+        required: true
+        type: choice
+        options:
+          - '1' # True
+          - '0' # False
+        default: '0'
       NVIDIA_INSTALL_ENABLED:
         description: 'Enable NVIDIA driver installation (1=Yes, 0=No).'
         required: true
         type: choice
         options:
-          - '1'
-          - '0'
-        # Pre-fills with the repo var's value, or '1' if not set.
-        default: ${{ vars.NVIDIA_INSTALL_ENABLED || '1' }}
+          - '1' # True
+          - '0' # False
+        default: '1'
       NVIDIA_DRIVER_VERSION_OVERRIDE:
-        description: 'Specific driver version. See releases.json link for options. Use "0" for latest production. Link: https://docs.nvidia.com/datacenter/tesla/drivers/releases.json'
+        description: 'Specific NVIDIA driver version (e.g., 550.90.07). Use "0" for latest.'
         required: false
-        # Pre-fills with the repo var's value, or '0' if not set.
-        default: ${{ vars.NVIDIA_DRIVER_VERSION_OVERRIDE || '0' }}
+        default: '0'
       NVIDIA_DRIVER_ARCHITECTURE:
         description: 'NVIDIA driver architecture (x86_64 or aarch64).'
         required: true
@@ -32,9 +41,8 @@ on:
         options:
           - 'x86_64'
           - 'aarch64'
-        # Pre-fills with the repo var's value, or 'x86_64' if not set.
-        default: ${{ vars.NVIDIA_DRIVER_ARCHITECTURE || 'x86_64' }}
-
+        default: 'x86_64'
+        
 env:
   TAG_NAME: ${{ github.ref_name }}
 
