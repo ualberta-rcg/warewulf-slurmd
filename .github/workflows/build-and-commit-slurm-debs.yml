@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       slurm_version_override:
-        description: 'Optional: Specific Slurm version to build (e.g., 23.11.7-1). Leave empty to use latest.'
+        description: 'Optional: Specific Slurm version to build (e.g., 24-11-5-1). Leave empty to use latest.'
         required: false
         default: ''
   schedule:
