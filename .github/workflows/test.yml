@@ -40,13 +40,13 @@ jobs:
             echo "🔍 No version override set. Detecting latest stable version..."
             
             # Fetch all tags from the SchedMD/slurm repo
-            TAGS=$(curl -s -H "Accept: application/vnd.github.v3+json" https://api.github.com/repos/SchedMD/slurm/tags | jq -r '.[].name')
-            
+            TAGS=$(curl -s https://api.github.com/repos/SchedMD/slurm/tags | jq -r '.[].name')
+
             # Filter for stable release tags (e.g., slurm-23-11-7-1) and get the latest
-            LATEST_TAG=$(echo "$TAGS" \
-              | grep -E '^slurm-[0-9]+-[0-9]+-[0-9]+-[0-9]+$' \
-              | sort -V \
-              | tail -n1)
+            LATEST_TAG=$(echo "$tags" \
+            | grep -E '^slurm-[0-9]+-[0-9]+-[0-9]+-[0-9]+$' \
+            | sort -V \
+            | tail -n1)
 
             if [ -z "$LATEST_TAG" ]; then
               echo "❌ Could not determine the latest Slurm tag."
