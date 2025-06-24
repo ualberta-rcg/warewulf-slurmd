@@ -12,67 +12,104 @@ env:
 jobs:
   build-and-push:
     name: Build & Push SlurmD WareWulf Image
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
 
     steps:
 
-      - name: 🔧 Normalize Build Options
+      - name: 🔧 Normalize Build Options and Detect NVIDIA Driver
         id: config
         run: |
+          set -e # Exit on any error
+          
           # Helper function to lowercase values
           lower() { echo "$1" | tr '[:upper:]' '[:lower:]'; }
 
-          # Normalize DISABLE_AUTOLOGIN
+          # --- Normalize Standard Options ---
           val="$(lower "${{ vars.DISABLE_AUTOLOGIN }}")"
-          if [ "$val" = "1" ] || [ "$val" = "true" ]; then
-            echo "DISABLE_AUTOLOGIN=true" >> $GITHUB_OUTPUT
-          else
-            echo "DISABLE_AUTOLOGIN=false" >> $GITHUB_OUTPUT
-          fi
+          [ "$val" = "1" ] || [ "$val" = "true" ] && echo "DISABLE_AUTOLOGIN=true" >> $GITHUB_OUTPUT || echo "DISABLE_AUTOLOGIN=false" >> $GITHUB_OUTPUT
 
-          # Normalize NVIDIA_INSTALL_ENABLED
+          val="${{ vars.KERNEL_VERSION_OVERRIDE }}"
+          [ "$val" != "0" ] && [ -n "$val" ] && echo "KERNEL_VERSION=$val" >> $GITHUB_OUTPUT || echo "KERNEL_VERSION=latest" >> $GITHUB_OUTPUT
+
+          val="${{ vars.SLURM_VERSION_OVERRIDE }}"
+          [ "$val" != "0" ] && [ -n "$val" ] && echo "SLURM_VERSION=$val" >> $GITHUB_OUTPUT || echo "SLURM_VERSION=latest" >> $GITHUB_OUTPUT
+          
+          # --- Normalize NVIDIA Options ---
+          echo "## Processing NVIDIA Configuration ##"
+          
+          IS_NVIDIA_ENABLED=false
           val="$(lower "${{ vars.NVIDIA_INSTALL_ENABLED }}")"
           if [ "$val" = "1" ] || [ "$val" = "true" ]; then
+            IS_NVIDIA_ENABLED=true
             echo "NVIDIA_INSTALL_ENABLED=true" >> $GITHUB_OUTPUT
           else
             echo "NVIDIA_INSTALL_ENABLED=false" >> $GITHUB_OUTPUT
           fi
+          
+          # Set default driver URL to 0 (disabled). This will be overridden if enabled.
+          NVIDIA_DRIVER_URL="0"
 
-          # Kernel version override
-          val="$(lower "${{ vars.KERNEL_VERSION_OVERRIDE }}")"
-          if [ "$val" != "0" ] && [ "$val" != "false" ] && [ -n "$val" ]; then
-            echo "KERNEL_VERSION=$val" >> $GITHUB_OUTPUT
-          else
-            echo "KERNEL_VERSION=latest" >> $GITHUB_OUTPUT
-          fi
+          # --- Determine NVIDIA Driver URL if Enabled ---
+          if [ "$IS_NVIDIA_ENABLED" = "true" ]; then
+            VERSION_OVERRIDE="${{ vars.NVIDIA_DRIVER_VERSION_OVERRIDE }}"
+            ARCH="${{ vars.NVIDIA_DRIVER_ARCHITECTURE || 'x86_64' }}" # Default to x86_64 if not set
+            RELEASES_URL="https://docs.nvidia.com/datacenter/tesla/drivers/releases.json"
 
-          # Slurm version override
-          val="$(lower "${{ vars.SLURM_VERSION_OVERRIDE }}")"
-          if [ "$val" != "0" ] && [ "$val" != "false" ] && [ -n "$val" ]; then
-            echo "SLURM_VERSION=$val" >> $GITHUB_OUTPUT
-          else
-            echo "SLURM_VERSION=latest" >> $GITHUB_OUTPUT
-          fi
+            echo "NVIDIA Install is ENABLED."
+            echo "  Architecture: $ARCH"
+            
+            echo "Downloading driver release info..."
+            RELEASES_JSON=$(curl -sL $RELEASES_URL)
+            if [ -z "$RELEASES_JSON" ]; then
+              echo "❌ ERROR: Failed to download NVIDIA release data from $RELEASES_URL"
+              exit 1
+            fi
+            
+            if [ -n "$VERSION_OVERRIDE" ] && [ "$VERSION_OVERRIDE" != "0" ]; then
+              echo "  Mode: Using specific version override: $VERSION_OVERRIDE"
+              # Search all branches for the specific version
+              DRIVER_URL=$(echo "$RELEASES_JSON" | jq -r --arg ver "$VERSION_OVERRIDE" --arg arch "$ARCH" '
+                .[] | .driver_info[] | select(.release_version == $ver) | .runfile_url[$arch]
+              ' | head -n1)
+            else
+              echo "  Mode: Detecting latest 'production branch' version."
+              # Find the first entry in the first "production branch"
+              LATEST_INFO=$(echo "$RELEASES_JSON" | jq 'first(.[] | select(.type == "production branch")) | .driver_info[0]')
+              DRIVER_URL=$(echo "$LATEST_INFO" | jq -r --arg arch "$ARCH" '.runfile_url[$arch]')
+            fi
 
-          # NVIDIA driver version override
-          val="$(lower "${{ vars.NVIDIA_DRIVER_VERSION_OVERRIDE }}")"
-          if [ "$val" != "0" ] && [ "$val" != "false" ] && [ -n "$val" ]; then
-            echo "NVIDIA_DRIVER_VERSION=$val" >> $GITHUB_OUTPUT
+            # Validate and set the final URL
+            if [ -z "$DRIVER_URL" ] || [ "$DRIVER_URL" = "null" ]; then
+              echo "❌ ERROR: Could not determine a valid driver URL for version/arch combination."
+              exit 1
+            else
+              NVIDIA_DRIVER_URL="$DRIVER_URL"
+              echo "✅ Success! Driver URL found: $NVIDIA_DRIVER_URL"
+            fi
           else
-            echo "NVIDIA_DRIVER_VERSION=auto" >> $GITHUB_OUTPUT
+            echo "NVIDIA Install is DISABLED."
           fi
-    
+          
+          echo "NVIDIA_DRIVER_URL=${NVIDIA_DRIVER_URL}" >> $GITHUB_OUTPUT
+          
+          echo "## Final Build Configuration ##"
+          cat $GITHUB_OUTPUT
+
       - name: 🛠️ Checkout Repository
         uses: actions/checkout@v4
 
       - name: 🐳 Build Docker Image
         run: |
-          docker build -t ${{ secrets.DOCKER_HUB_REPO }}:$TAG_NAME .
+          docker build \
+            --build-arg NVIDIA_DRIVER_URL=${{ steps.config.outputs.NVIDIA_DRIVER_URL }} \
+            -t ${{ secrets.DOCKER_HUB_REPO }}:$TAG_NAME .
 
       - name: 🚀 Login to DockerHub
+        if: github.event_name == 'push' # Only push on 'push' events, not on manual dispatches for testing
         run: |
           echo "${{ secrets.DOCKER_HUB_TOKEN }}" | docker login -u "${{ secrets.DOCKER_HUB_USER }}" --password-stdin
 
       - name: 🚀 Push Image to DockerHub
+        if: github.event_name == 'push'
         run: |
           docker push ${{ secrets.DOCKER_HUB_REPO }}:$TAG_NAME
