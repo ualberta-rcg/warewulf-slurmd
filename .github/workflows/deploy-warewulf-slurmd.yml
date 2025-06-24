@@ -45,129 +45,98 @@ jobs:
 
       - name: 🔧 Configure Build & Verify Dependencies
         id: config
-        # Pass both the input and the var as distinct environment variables
         env:
-          # Use the exact key from your workflow_dispatch definition
-          INPUT_SLURM_VERSION: ${{ github.event.inputs.slurm_version_override }}
+          # --- Pass ALL potential inputs and variables into the script's environment ---
+          INPUT_SLURM_VERSION: ${{ github.event.inputs.SLURM_VERSION_OVERRIDE }}
           VAR_SLURM_VERSION: ${{ vars.SLURM_VERSION_OVERRIDE }}
+
+          INPUT_NVIDIA_ENABLED: ${{ github.event.inputs.NVIDIA_INSTALL_ENABLED }}
+          VAR_NVIDIA_ENABLED: ${{ vars.NVIDIA_INSTALL_ENABLED }}
+
+          INPUT_NVIDIA_VERSION: ${{ github.event.inputs.NVIDIA_DRIVER_VERSION_OVERRIDE }}
+          VAR_NVIDIA_VERSION: ${{ vars.NVIDIA_DRIVER_VERSION_OVERRIDE }}
+
+          INPUT_NVIDIA_ARCH: ${{ github.event.inputs.NVIDIA_DRIVER_ARCHITECTURE }}
+          VAR_NVIDIA_ARCH: ${{ vars.NVIDIA_DRIVER_ARCHITECTURE }}
         run: |
           set -e # Exit on any error
           
           # --- DEBUGGING: See the raw values the script receives ---
           echo "--- Debugging Raw Input/Variable Values ---"
-          echo "Value from Manual Input (INPUT_SLURM_VERSION): '$INPUT_SLURM_VERSION'"
-          echo "Value from Repository Variable (VAR_SLURM_VERSION): '$VAR_SLURM_VERSION'"
+          echo "INPUT_SLURM_VERSION: '$INPUT_SLURM_VERSION'"
+          echo "VAR_SLURM_VERSION:   '$VAR_SLURM_VERSION'"
+          echo "INPUT_NVIDIA_ENABLED: '$INPUT_NVIDIA_ENABLED'"
+          echo "VAR_NVIDIA_ENABLED:   '$VAR_NVIDIA_ENABLED'"
+          echo "INPUT_NVIDIA_VERSION: '$INPUT_NVIDIA_VERSION'"
+          echo "VAR_NVIDIA_VERSION:   '$VAR_NVIDIA_VERSION'"
+          echo "INPUT_NVIDIA_ARCH:    '$INPUT_NVIDIA_ARCH'"
+          echo "VAR_NVIDIA_ARCH:      '$VAR_NVIDIA_ARCH'"
           echo "-------------------------------------------"
 
-          # Helper function to lowercase values
           lower() { echo "$1" | tr '[:upper:]' '[:lower:]'; }
 
           echo "## 1. Normalizing Standard Options ##"
-          # (Standard options remain the same)
-          val="$(lower "${{ vars.DISABLE_AUTOLOGIN }}")"
-          [ "$val" = "1" ] || [ "$val" = "true" ] && echo "DISABLE_AUTOLOGIN=true" >> $GITHUB_OUTPUT || echo "DISABLE_AUTOLOGIN=false" >> $GITHUB_OUTPUT
-          val="${{ vars.KERNEL_VERSION_OVERRIDE }}"
-          [ "$val" != "0" ] && [ -n "$val" ] && echo "KERNEL_VERSION=$val" >> $GITHUB_OUTPUT || echo "KERNEL_VERSION=latest" >> $GITHUB_OUTPUT
+          val="$(lower "${{ vars.DISABLE_AUTOLOGIN }}")"; [ "$val" = "1" ] || [ "$val" = "true" ] && echo "DISABLE_AUTOLOGIN=true" >> $GITHUB_OUTPUT || echo "DISABLE_AUTOLOGIN=false" >> $GITHUB_OUTPUT
+          val="${{ vars.KERNEL_VERSION_OVERRIDE }}"; [ "$val" != "0" ] && [ -n "$val" ] && echo "KERNEL_VERSION=$val" >> $GITHUB_OUTPUT || echo "KERNEL_VERSION=latest" >> $GITHUB_OUTPUT
 
           # ---
-          echo ""
-          echo "## 2. Processing Slurm Configuration & Verifying DEBs ##"
-          
-          # Use shell logic to determine the override value with clear priority AND the "not 0" check
-          SLURM_VERSION_OVERRIDE="0" # Start with the default
-
-          # Check manual input first. It must exist AND not be "0".
-          if [ -n "$INPUT_SLURM_VERSION" ] && [ "$INPUT_SLURM_VERSION" != "0" ]; then
-            echo "-> Using value from manual trigger: '$INPUT_SLURM_VERSION'"
-            SLURM_VERSION_OVERRIDE="$INPUT_SLURM_VERSION"
-          # Then check repo variable. It must exist AND not be "0".
-          elif [ -n "$VAR_SLURM_VERSION" ] && [ "$VAR_SLURM_VERSION" != "0" ]; then
-            echo "-> Using value from repository variable: '$VAR_SLURM_VERSION'"
-            SLURM_VERSION_OVERRIDE="$VAR_SLURM_VERSION"
-          fi
-          
+          echo -e "\n## 2. Processing Slurm Configuration & Verifying DEBs ##"
+          SLURM_VERSION_OVERRIDE="0";
+          if [ -n "$INPUT_SLURM_VERSION" ] && [ "$INPUT_SLURM_VERSION" != "0" ]; then SLURM_VERSION_OVERRIDE="$INPUT_SLURM_VERSION";
+          elif [ -n "$VAR_SLURM_VERSION" ] && [ "$VAR_SLURM_VERSION" != "0" ]; then SLURM_VERSION_OVERRIDE="$VAR_SLURM_VERSION"; fi
           echo "Effective SLURM_VERSION_OVERRIDE is: '$SLURM_VERSION_OVERRIDE'"
 
           if [ "$SLURM_VERSION_OVERRIDE" != "0" ]; then
-            echo "✅ Using specified Slurm version override: $SLURM_VERSION_OVERRIDE"
             TARGET_SLURM_VERSION="$SLURM_VERSION_OVERRIDE"
           else
-            echo "🔍 No valid override detected. Finding latest stable version..."
-            TAGS=$(curl -s https://api.github.com/repos/SchedMD/slurm/tags | jq -r '.[].name')
-            LATEST_TAG=$(echo "$TAGS" | grep -E '^slurm-[0-9]+-[0-9]+-[0-9]+-[0-9]+$' | sort -V | tail -n1)
-
-            if [ -z "$LATEST_TAG" ]; then
-              echo "❌ ERROR: Could not determine the latest Slurm tag."
-              exit 1
-            fi
+            echo "🔍 No valid override. Detecting latest stable version..."
+            LATEST_TAG=$(curl -s https://api.github.com/repos/SchedMD/slurm/tags | jq -r '.[].name' | grep -E '^slurm-[0-9]+-[0-9]+-[0-9]+-[0-9]+$' | sort -V | tail -n1)
+            [ -z "$LATEST_TAG" ] && { echo "❌ ERROR: Could not determine latest Slurm tag."; exit 1; }
             TARGET_SLURM_VERSION="${LATEST_TAG#slurm-}"
-            echo "🔬 Detected latest Slurm version: $TARGET_SLURM_VERSION"
           fi
-          
-          echo "🔎 Verifying that DEB packages for Slurm version '$TARGET_SLURM_VERSION' exist..."
+          echo "🎯 Target Slurm Version: $TARGET_SLURM_VERSION"
           debver="$(echo "$TARGET_SLURM_VERSION" | sed 's/^\([0-9]*\)-\([0-9]*\)-\([0-9]*\)-\([0-9]*\)$/\1.\2.\3-\4/')"
-          debdir="$GITHUB_WORKSPACE/slurm-debs"
-          OS_CODENAME="u2404"
-          search_pattern="*_${debver}_*_${OS_CODENAME}.deb"
-          
-          count=$(find "$debdir" -type f -name "$search_pattern" 2>/dev/null | wc -l)
+          count=$(find "$GITHUB_WORKSPACE/slurm-debs" -type f -name "*_${debver}_*_u2404.deb" 2>/dev/null | wc -l)
+          [ "$count" -eq 0 ] && { echo "❌ ERROR: Slurm DEB packages for version $TARGET_SLURM_VERSION not found!"; exit 1; }
+          echo "✅ Found $count matching DEB packages."
 
-          if [ "$count" -eq 0 ]; then
-            echo "❌ ERROR: Slurm DEB packages for version $TARGET_SLURM_VERSION not found!"
-            echo "   Searched for pattern '$search_pattern' in '$debdir'."
-            echo "   Please build and commit the DEBs for this version first."
-            exit 1
-          else
-            echo "✅ Found $count matching DEB packages for Slurm $TARGET_SLURM_VERSION."
-          fi
-          
           # ---
-          echo ""
-          echo "## 3. Processing NVIDIA Configuration ##"
-          ENABLED_INPUT="$(lower "${{ github.event.inputs.NVIDIA_INSTALL_ENABLED || vars.NVIDIA_INSTALL_ENABLED || '0' }}")"
-          
+          echo -e "\n## 3. Processing NVIDIA Configuration ##"
+          # Determine if NVIDIA is enabled
           IS_NVIDIA_ENABLED=false
-          if [ "$ENABLED_INPUT" = "1" ] || [ "$ENABLED_INPUT" = "true" ]; then
-            IS_NVIDIA_ENABLED=true
-          fi
+          if [ -n "$INPUT_NVIDIA_ENABLED" ]; then ENABLED_VAL="$INPUT_NVIDIA_ENABLED";
+          elif [ -n "$VAR_NVIDIA_ENABLED" ]; then ENABLED_VAL="$VAR_NVIDIA_ENABLED"; else ENABLED_VAL="0"; fi
+          if [ "$(lower "$ENABLED_VAL")" = "1" ] || [ "$(lower "$ENABLED_VAL")" = "true" ]; then IS_NVIDIA_ENABLED=true; fi
           
           NVIDIA_DRIVER_URL="0"
           if [ "$IS_NVIDIA_ENABLED" = "true" ]; then
-            VERSION_OVERRIDE="${{ github.event.inputs.NVIDIA_DRIVER_VERSION_OVERRIDE || vars.NVIDIA_DRIVER_VERSION_OVERRIDE || '0' }}"
-            ARCH="${{ github.event.inputs.NVIDIA_DRIVER_ARCHITECTURE || vars.NVIDIA_DRIVER_ARCHITECTURE || 'x86_64' }}"
-            echo "NVIDIA Install is ENABLED (Arch: $ARCH)."
+            echo "NVIDIA Install is ENABLED."
+            # Determine Version
+            NVIDIA_VERSION_OVERRIDE="0"
+            if [ -n "$INPUT_NVIDIA_VERSION" ] && [ "$INPUT_NVIDIA_VERSION" != "0" ]; then NVIDIA_VERSION_OVERRIDE="$INPUT_NVIDIA_VERSION";
+            elif [ -n "$VAR_NVIDIA_VERSION" ] && [ "$VAR_NVIDIA_VERSION" != "0" ]; then NVIDIA_VERSION_OVERRIDE="$VAR_NVIDIA_VERSION"; fi
+            # Determine Arch
+            if [ -n "$INPUT_NVIDIA_ARCH" ]; then ARCH="$INPUT_NVIDIA_ARCH";
+            elif [ -n "$VAR_NVIDIA_ARCH" ]; then ARCH="$VAR_NVIDIA_ARCH"; else ARCH="x86_64"; fi
+            echo "Effective NVIDIA_VERSION_OVERRIDE: '$NVIDIA_VERSION_OVERRIDE', Arch: '$ARCH'"
 
-            if [ -n "$VERSION_OVERRIDE" ] && [ "$VERSION_OVERRIDE" != "0" ]; then
-              echo "  Mode: Using specific NVIDIA version override: $VERSION_OVERRIDE"
-            else
-              echo "  Mode: Detecting latest 'production branch' NVIDIA version."
-            fi
-            
             RELEASES_JSON=$(curl -sL "https://docs.nvidia.com/datacenter/tesla/drivers/releases.json")
-            if [ -z "$RELEASES_JSON" ]; then
-              echo "❌ ERROR: Failed to download NVIDIA release data."
-              exit 1
-            fi
+            [ -z "$RELEASES_JSON" ] && { echo "❌ ERROR: Failed to download NVIDIA release data."; exit 1; }
             
-            if [ -n "$VERSION_OVERRIDE" ] && [ "$VERSION_OVERRIDE" != "0" ]; then
-              DRIVER_URL=$(echo "$RELEASES_JSON" | jq -r --arg ver "$VERSION_OVERRIDE" --arg arch "$ARCH" '.[] | .driver_info[] | select(.release_version == $ver) | .runfile_url[$arch]' | head -n1)
+            if [ "$NVIDIA_VERSION_OVERRIDE" != "0" ]; then
+              DRIVER_URL=$(echo "$RELEASES_JSON" | jq -r --arg ver "$NVIDIA_VERSION_OVERRIDE" --arg arch "$ARCH" '.[] | .driver_info[] | select(.release_version == $ver) | .runfile_url[$arch]' | head -n1)
             else
-              LATEST_INFO=$(echo "$RELEASES_JSON" | jq 'first(.[] | select(.type == "production branch")) | .driver_info[0]')
-              DRIVER_URL=$(echo "$LATEST_INFO" | jq -r --arg arch "$ARCH" '.runfile_url[$arch]')
+              DRIVER_URL=$(echo "$RELEASES_JSON" | jq -r --arg arch "$ARCH" 'first(.[] | select(.type == "production branch")) | .driver_info[0].runfile_url[$arch]')
             fi
 
-            if [ -z "$DRIVER_URL" ] || [ "$DRIVER_URL" = "null" ]; then
-              echo "❌ ERROR: Could not determine a valid NVIDIA driver URL for the specified version/arch."
-              exit 1
-            else
-              NVIDIA_DRIVER_URL="$DRIVER_URL"
-              echo "✅ Success! NVIDIA Driver URL found: $NVIDIA_DRIVER_URL"
-            fi
+            [ -z "$DRIVER_URL" ] || [ "$DRIVER_URL" = "null" ] && { echo "❌ ERROR: Could not determine a valid NVIDIA driver URL."; exit 1; }
+            NVIDIA_DRIVER_URL="$DRIVER_URL"
+            echo "✅ Success! NVIDIA Driver URL found: $NVIDIA_DRIVER_URL"
           else
             echo "NVIDIA Install is DISABLED."
           fi
 
-          echo "## 4. Final Build Configuration ##"
+          echo -e "\n## 4. Final Build Configuration ##"
           echo "SLURM_VERSION=${TARGET_SLURM_VERSION}" >> $GITHUB_OUTPUT
           echo "NVIDIA_INSTALL_ENABLED=${IS_NVIDIA_ENABLED}" >> $GITHUB_OUTPUT
           echo "NVIDIA_DRIVER_URL=${NVIDIA_DRIVER_URL}" >> $GITHUB_OUTPUT
