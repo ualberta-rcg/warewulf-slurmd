@@ -108,8 +108,8 @@ jobs:
           echo "Downloading from ${{ steps.vars.outputs.tarball_url }}"
           curl -L "${{ steps.vars.outputs.tarball_url }}" -o slurm.tar.gz
           tar -xzf slurm.tar.gz
-          # The extracted directory name should match the tag name
-          mv slurm-${{ steps.vars.outputs.version }} slurm-src
+          src_dir=$(find . -maxdepth 1 -type d -name "slurm-*")
+          mv "$src_dir" slurm-src
 
       - name: 📦 Build Slurm DEBs
         if: steps.version-check.outputs.skip_build == 'false'
