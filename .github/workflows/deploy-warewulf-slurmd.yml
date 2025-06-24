@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       slurm_version_override:
-        description: 'Specific Slurm version (e.g., 23.11.5-1). Use "0" for latest.'
+        description: 'Specific Slurm version (e.g., 24-11-5-1). Use "0" for latest.'
         required: false
         default: '0'
       NVIDIA_INSTALL_ENABLED:
