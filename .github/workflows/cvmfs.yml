@@ -1,0 +1,56 @@
+name: Use Compute Canada CVMFS Software Stack
+
+on:
+  workflow_dispatch: # Allows you to run this manually from the Actions tab
+
+jobs:
+  build-with-alliance-stack:
+    name: Build with Alliance/Compute Canada Software
+    runs-on: ubuntu-latest # This works on standard GitHub runners
+
+    steps:
+      - name: 🛠️ Checkout Repository
+        uses: actions/checkout@v4
+
+      # 1. This is the key step that sets up CVMFS
+      #    We specify the repository names for the Digital Research Alliance of Canada.
+      - name: 📂 Mount Compute Canada CVMFS Repositories
+        uses: cvmfs-contrib/github-action-cvmfs@v2
+        with:
+          cvmfs_repositories: 'soft.computecanada.ca,containers.computecanada.ca'
+
+      # 2. Verify the mount and initialize the software environment
+      #    This is the standard procedure for using their software stack.
+      - name: ✅ Verify Mount & Initialize Environment
+        run: |
+          echo "--- Verifying CVMFS mounts are available ---"
+          ls /cvmfs/
+          if [ ! -d "/cvmfs/soft.computecanada.ca" ]; then
+            echo "❌ ERROR: CVMFS repository 'soft.computecanada.ca' not found!"
+            exit 1
+          fi
+          echo "✅ CVMFS mounts look good."
+
+          echo ""
+          echo "--- Sourcing the Alliance/Compute Canada environment profile ---"
+          # This script sets up the 'module' command and other environment variables
+          source /cvmfs/soft.computecanada.ca/config/profile/bash.sh
+          
+          echo "--- Checking module system version ---"
+          module --version
+
+      # 3. Use the software stack
+      #    Now you can use the 'module' command just like on a cluster.
+      - name: ⚙️ Use Software from CVMFS
+        run: |
+          echo "--- Sourcing the environment again for this step ---"
+          # Each 'run' step is a new shell, so you must source the setup script again
+          source /cvmfs/soft.computecanada.ca/config/profile/bash.sh
+          
+          echo "--- Searching for available GCC modules ---"
+          module avail gcc
+          
+          echo ""
+          echo "--- Loading a specific GCC module and checking its version ---"
+          module load gcc/12.3
+          gcc --version
