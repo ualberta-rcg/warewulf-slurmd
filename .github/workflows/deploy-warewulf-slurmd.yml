@@ -43,34 +43,56 @@ jobs:
       - name: 🛠️ Checkout Repository
         uses: actions/checkout@v4
 
-      - name: 🔧 Configure Build & Verify Dependencies
+- name: 🔧 Configure Build & Verify Dependencies
         id: config
+        # Pass both the input and the var as distinct environment variables
         env:
-          SLURM_VERSION_OVERRIDE: ${{ github.event.inputs.SLURM_VERSION_OVERRIDE != '' && github.event.inputs.SLURM_VERSION_OVERRIDE || vars.SLURM_VERSION_OVERRIDE != '' && vars.SLURM_VERSION_OVERRIDE || '0' }}
+          # Use the exact key from your workflow_dispatch definition
+          INPUT_SLURM_VERSION: ${{ github.event.inputs.slurm_version_override }}
+          VAR_SLURM_VERSION: ${{ vars.SLURM_VERSION_OVERRIDE }}
         run: |
           set -e # Exit on any error
           
-          echo "Effective SLURM_VERSION_OVERRIDE: $SLURM_VERSION_OVERRIDE"
-          
+          # --- DEBUGGING: See the raw values the script receives ---
+          echo "--- Debugging Raw Input/Variable Values ---"
+          echo "Value from Manual Input (INPUT_SLURM_VERSION): '$INPUT_SLURM_VERSION'"
+          echo "Value from Repository Variable (VAR_SLURM_VERSION): '$VAR_SLURM_VERSION'"
+          echo "-------------------------------------------"
+
           # Helper function to lowercase values
           lower() { echo "$1" | tr '[:upper:]' '[:lower:]'; }
 
           echo "## 1. Normalizing Standard Options ##"
+          # (Standard options remain the same)
           val="$(lower "${{ vars.DISABLE_AUTOLOGIN }}")"
           [ "$val" = "1" ] || [ "$val" = "true" ] && echo "DISABLE_AUTOLOGIN=true" >> $GITHUB_OUTPUT || echo "DISABLE_AUTOLOGIN=false" >> $GITHUB_OUTPUT
-
           val="${{ vars.KERNEL_VERSION_OVERRIDE }}"
           [ "$val" != "0" ] && [ -n "$val" ] && echo "KERNEL_VERSION=$val" >> $GITHUB_OUTPUT || echo "KERNEL_VERSION=latest" >> $GITHUB_OUTPUT
 
           # ---
           echo ""
           echo "## 2. Processing Slurm Configuration & Verifying DEBs ##"
+          
+          # Use shell logic to determine the override value with clear priority AND the "not 0" check
+          SLURM_VERSION_OVERRIDE="0" # Start with the default
 
-          if [ -n "$SLURM_VERSION_OVERRIDE" ] && [ "$SLURM_VERSION_OVERRIDE" != "0" ]; then
+          # Check manual input first. It must exist AND not be "0".
+          if [ -n "$INPUT_SLURM_VERSION" ] && [ "$INPUT_SLURM_VERSION" != "0" ]; then
+            echo "-> Using value from manual trigger: '$INPUT_SLURM_VERSION'"
+            SLURM_VERSION_OVERRIDE="$INPUT_SLURM_VERSION"
+          # Then check repo variable. It must exist AND not be "0".
+          elif [ -n "$VAR_SLURM_VERSION" ] && [ "$VAR_SLURM_VERSION" != "0" ]; then
+            echo "-> Using value from repository variable: '$VAR_SLURM_VERSION'"
+            SLURM_VERSION_OVERRIDE="$VAR_SLURM_VERSION"
+          fi
+          
+          echo "Effective SLURM_VERSION_OVERRIDE is: '$SLURM_VERSION_OVERRIDE'"
+
+          if [ "$SLURM_VERSION_OVERRIDE" != "0" ]; then
             echo "✅ Using specified Slurm version override: $SLURM_VERSION_OVERRIDE"
             TARGET_SLURM_VERSION="$SLURM_VERSION_OVERRIDE"
           else
-            echo "🔍 No Slurm version override. Detecting latest stable version from SchedMD..."
+            echo "🔍 No valid override detected. Finding latest stable version..."
             TAGS=$(curl -s https://api.github.com/repos/SchedMD/slurm/tags | jq -r '.[].name')
             LATEST_TAG=$(echo "$TAGS" | grep -E '^slurm-[0-9]+-[0-9]+-[0-9]+-[0-9]+$' | sort -V | tail -n1)
 
@@ -81,7 +103,7 @@ jobs:
             TARGET_SLURM_VERSION="${LATEST_TAG#slurm-}"
             echo "🔬 Detected latest Slurm version: $TARGET_SLURM_VERSION"
           fi
-
+          
           echo "🔎 Verifying that DEB packages for Slurm version '$TARGET_SLURM_VERSION' exist..."
           debver="$(echo "$TARGET_SLURM_VERSION" | sed 's/^\([0-9]*\)-\([0-9]*\)-\([0-9]*\)-\([0-9]*\)$/\1.\2.\3-\4/')"
           debdir="$GITHUB_WORKSPACE/slurm-debs"
