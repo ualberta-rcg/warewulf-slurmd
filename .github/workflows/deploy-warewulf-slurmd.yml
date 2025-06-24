@@ -42,7 +42,7 @@ on:
           - 'x86_64'
           - 'aarch64'
         default: 'x86_64'
-        
+
 env:
   TAG_NAME: ${{ github.ref_name }}
 
@@ -58,9 +58,15 @@ jobs:
       - name: 🔧 Configure Build & Verify Dependencies
         id: config
         env:
-          # --- Pass ALL potential inputs and variables into the script's environment ---
+          # Pass ALL potential inputs and variables into the script's environment
           INPUT_SLURM_VERSION: ${{ github.event.inputs.SLURM_VERSION_OVERRIDE }}
           VAR_SLURM_VERSION: ${{ vars.SLURM_VERSION_OVERRIDE }}
+          
+          INPUT_KERNEL_VERSION: ${{ github.event.inputs.KERNEL_VERSION_OVERRIDE }}
+          VAR_KERNEL_VERSION: ${{ vars.KERNEL_VERSION_OVERRIDE }}
+          
+          INPUT_DISABLE_AUTOLOGIN: ${{ github.event.inputs.DISABLE_AUTOLOGIN }}
+          VAR_DISABLE_AUTOLOGIN: ${{ vars.DISABLE_AUTOLOGIN }}
 
           INPUT_NVIDIA_ENABLED: ${{ github.event.inputs.NVIDIA_INSTALL_ENABLED }}
           VAR_NVIDIA_ENABLED: ${{ vars.NVIDIA_INSTALL_ENABLED }}
@@ -73,31 +79,62 @@ jobs:
         run: |
           set -e # Exit on any error
           
-          # --- DEBUGGING: See the raw values the script receives ---
           echo "--- Debugging Raw Input/Variable Values ---"
-          echo "INPUT_SLURM_VERSION: '$INPUT_SLURM_VERSION'"
-          echo "VAR_SLURM_VERSION:   '$VAR_SLURM_VERSION'"
-          echo "INPUT_NVIDIA_ENABLED: '$INPUT_NVIDIA_ENABLED'"
-          echo "VAR_NVIDIA_ENABLED:   '$VAR_NVIDIA_ENABLED'"
-          echo "INPUT_NVIDIA_VERSION: '$INPUT_NVIDIA_VERSION'"
-          echo "VAR_NVIDIA_VERSION:   '$VAR_NVIDIA_VERSION'"
-          echo "INPUT_NVIDIA_ARCH:    '$INPUT_NVIDIA_ARCH'"
-          echo "VAR_NVIDIA_ARCH:      '$VAR_NVIDIA_ARCH'"
+          # (Add any new debug values here if needed)
+          echo "INPUT_KERNEL_VERSION: '$INPUT_KERNEL_VERSION'"
+          echo "VAR_KERNEL_VERSION:   '$VAR_KERNEL_VERSION'"
           echo "-------------------------------------------"
 
           lower() { echo "$1" | tr '[:upper:]' '[:lower:]'; }
 
-          echo "## 1. Normalizing Standard Options ##"
-          val="$(lower "${{ vars.DISABLE_AUTOLOGIN }}")"; [ "$val" = "1" ] || [ "$val" = "true" ] && echo "DISABLE_AUTOLOGIN=true" >> $GITHUB_OUTPUT || echo "DISABLE_AUTOLOGIN=false" >> $GITHUB_OUTPUT
-          val="${{ vars.KERNEL_VERSION_OVERRIDE }}"; [ "$val" != "0" ] && [ -n "$val" ] && echo "KERNEL_VERSION=$val" >> $GITHUB_OUTPUT || echo "KERNEL_VERSION=latest" >> $GITHUB_OUTPUT
-
+          echo "## 1. Normalizing Autologin Option ##"
+          AUTOLOGIN_VAL="0"
+          if [ -n "$INPUT_DISABLE_AUTOLOGIN" ]; then AUTOLOGIN_VAL="$INPUT_DISABLE_AUTOLOGIN";
+          elif [ -n "$VAR_DISABLE_AUTOLOGIN" ]; then AUTOLOGIN_VAL="$VAR_DISABLE_AUTOLOGIN"; fi
+          if [ "$(lower "$AUTOLOGIN_VAL")" = "1" ] || [ "$(lower "$AUTOLOGIN_VAL")" = "true" ]; then
+            echo "DISABLE_AUTOLOGIN=true" >> $GITHUB_OUTPUT
+          else
+            echo "DISABLE_AUTOLOGIN=false" >> $GITHUB_OUTPUT
+          fi
+          
           # ---
-          echo -e "\n## 2. Processing Slurm Configuration & Verifying DEBs ##"
-          SLURM_VERSION_OVERRIDE="0";
+          echo -e "\n## 2. Processing Kernel Configuration & Verifying Packages ##"
+          KERNEL_VERSION_OVERRIDE="0"
+          if [ -n "$INPUT_KERNEL_VERSION" ] && [ "$INPUT_KERNEL_VERSION" != "0" ]; then KERNEL_VERSION_OVERRIDE="$INPUT_KERNEL_VERSION";
+          elif [ -n "$VAR_KERNEL_VERSION" ] && [ "$VAR_KERNEL_VERSION" != "0" ]; then KERNEL_VERSION_OVERRIDE="$VAR_KERNEL_VERSION"; fi
+          
+          if [ "$KERNEL_VERSION_OVERRIDE" != "0" ]; then
+            TARGET_KERNEL_VERSION="$KERNEL_VERSION_OVERRIDE"
+            echo "🎯 Target Kernel Version is specific: $TARGET_KERNEL_VERSION"
+            echo "🔎 Verifying kernel packages exist in Ubuntu 24.04 apt repository..."
+            sudo apt-get update -qq
+            
+            IMAGE_PKG="linux-image-${TARGET_KERNEL_VERSION}"
+            HEADERS_PKG="linux-headers-${TARGET_KERNEL_VERSION}"
+
+            # Check for the image package
+            if ! apt-cache policy "$IMAGE_PKG" | grep -q "Candidate:"; then
+              echo "❌ ERROR: Kernel image package '$IMAGE_PKG' not found in apt repositories."
+              exit 1
+            fi
+            # Check for the headers package
+            if ! apt-cache policy "$HEADERS_PKG" | grep -q "Candidate:"; then
+              echo "❌ ERROR: Kernel headers package '$HEADERS_PKG' not found in apt repositories."
+              exit 1
+            fi
+            echo "✅ Verified that '$IMAGE_PKG' and '$HEADERS_PKG' are available."
+            echo "KERNEL_VERSION=${TARGET_KERNEL_VERSION}" >> $GITHUB_OUTPUT
+          else
+            echo "🎯 Target Kernel Version is latest available."
+            echo "KERNEL_VERSION=latest" >> $GITHUB_OUTPUT
+          fi
+          
+          # ---
+          echo -e "\n## 3. Processing Slurm Configuration & Verifying DEBs ##"
+          SLURM_VERSION_OVERRIDE="0"
           if [ -n "$INPUT_SLURM_VERSION" ] && [ "$INPUT_SLURM_VERSION" != "0" ]; then SLURM_VERSION_OVERRIDE="$INPUT_SLURM_VERSION";
           elif [ -n "$VAR_SLURM_VERSION" ] && [ "$VAR_SLURM_VERSION" != "0" ]; then SLURM_VERSION_OVERRIDE="$VAR_SLURM_VERSION"; fi
-          echo "Effective SLURM_VERSION_OVERRIDE is: '$SLURM_VERSION_OVERRIDE'"
-
+          
           if [ "$SLURM_VERSION_OVERRIDE" != "0" ]; then
             TARGET_SLURM_VERSION="$SLURM_VERSION_OVERRIDE"
           else
@@ -113,11 +150,11 @@ jobs:
           echo "✅ Found $count matching DEB packages."
 
           # ---
-          echo -e "\n## 3. Processing NVIDIA Configuration ##"
-          # Determine if NVIDIA is enabled
+          echo -e "\n## 4. Processing NVIDIA Configuration ##"
           IS_NVIDIA_ENABLED=false
+          ENABLED_VAL="0"
           if [ -n "$INPUT_NVIDIA_ENABLED" ]; then ENABLED_VAL="$INPUT_NVIDIA_ENABLED";
-          elif [ -n "$VAR_NVIDIA_ENABLED" ]; then ENABLED_VAL="$VAR_NVIDIA_ENABLED"; else ENABLED_VAL="0"; fi
+          elif [ -n "$VAR_NVIDIA_ENABLED" ]; then ENABLED_VAL="$VAR_NVIDIA_ENABLED"; fi
           if [ "$(lower "$ENABLED_VAL")" = "1" ] || [ "$(lower "$ENABLED_VAL")" = "true" ]; then IS_NVIDIA_ENABLED=true; fi
           
           NVIDIA_DRIVER_URL="0"
@@ -141,14 +178,14 @@ jobs:
               DRIVER_URL=$(echo "$RELEASES_JSON" | jq -r --arg arch "$ARCH" 'first(.[] | select(.type == "production branch")) | .driver_info[0].runfile_url[$arch]')
             fi
 
-            [ -z "$DRIVER_URL" ] || [ "$DRIVER_URL" = "null" ] && { echo "❌ ERROR: Could not determine a valid NVIDIA driver URL."; exit 1; }
+            [ -z "$DRIVER_URL" ] || [ "$DRIVER_URL" = "null" ] && { echo "❌ ERROR: Could not determine a valid NVIDIA driver URL for version '$NVIDIA_VERSION_OVERRIDE' and arch '$ARCH'."; exit 1; }
             NVIDIA_DRIVER_URL="$DRIVER_URL"
             echo "✅ Success! NVIDIA Driver URL found: $NVIDIA_DRIVER_URL"
           else
             echo "NVIDIA Install is DISABLED."
           fi
 
-          echo -e "\n## 4. Final Build Configuration ##"
+          echo -e "\n## 5. Final Build Configuration ##"
           echo "SLURM_VERSION=${TARGET_SLURM_VERSION}" >> $GITHUB_OUTPUT
           echo "NVIDIA_INSTALL_ENABLED=${IS_NVIDIA_ENABLED}" >> $GITHUB_OUTPUT
           echo "NVIDIA_DRIVER_URL=${NVIDIA_DRIVER_URL}" >> $GITHUB_OUTPUT
@@ -158,6 +195,9 @@ jobs:
         run: |
           docker build \
             --build-arg SLURM_VERSION=${{ steps.config.outputs.SLURM_VERSION }} \
+            --build-arg KERNEL_VERSION=${{ steps.config.outputs.KERNEL_VERSION }} \
+            --build-arg DISABLE_AUTOLOGIN=${{ steps.config.outputs.DISABLE_AUTOLOGIN }} \
+            --build-arg NVIDIA_INSTALL_ENABLED=${{ steps.config.outputs.NVIDIA_INSTALL_ENABLED }} \
             --build-arg NVIDIA_DRIVER_URL=${{ steps.config.outputs.NVIDIA_DRIVER_URL }} \
             -t ${{ secrets.DOCKER_HUB_REPO }}:$TAG_NAME .
 
