@@ -6,7 +6,7 @@ on:
       - latest
   workflow_dispatch:
     inputs:
-      slurm_version_override:
+      SLURM_VERSION_OVERRIDE:
         description: 'Specific Slurm version (e.g., 24-11-5-1). Use "0" for latest.'
         required: false
         default: '0'
@@ -62,7 +62,7 @@ jobs:
           echo ""
           echo "## 2. Processing Slurm Configuration & Verifying DEBs ##"
           
-          SLURM_VERSION_OVERRIDE="${{ github.event.inputs.slurm_version_override || vars.SLURM_VERSION_OVERRIDE || '0' }}"
+          SLURM_VERSION_OVERRIDE="${{ github.event.inputs.SLURM_VERSION_OVERRIDE || vars.SLURM_VERSION_OVERRIDE || '0' }}"
 
           if [ -n "$SLURM_VERSION_OVERRIDE" ] && [ "$SLURM_VERSION_OVERRIDE" != "0" ]; then
             echo "✅ Using specified Slurm version override: $SLURM_VERSION_OVERRIDE"
