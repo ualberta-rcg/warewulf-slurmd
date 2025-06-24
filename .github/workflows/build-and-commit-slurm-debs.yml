@@ -3,7 +3,7 @@ name: Build and Commit Slurm DEB Packages
 on:
   workflow_dispatch:
     inputs:
-      slurm_version_override:
+      SLURM_VERSION_OVERRIDE:
         description: 'Optional: Specific Slurm version to build (e.g., 24-11-5-1). Leave empty to use latest.'
         required: false
         default: ''
@@ -31,7 +31,7 @@ jobs:
           set -e # Exit on error
           
           # Use the manual dispatch input first, then the repo variable as a fallback
-          VERSION_OVERRIDE="${{ github.event.inputs.slurm_version_override || vars.SLURM_VERSION_OVERRIDE }}"
+          VERSION_OVERRIDE="${{ github.event.inputs.SLURM_VERSION_OVERRIDE || vars.SLURM_VERSION_OVERRIDE }}"
 
           if [ -n "$VERSION_OVERRIDE" ] && [ "$VERSION_OVERRIDE" != "0" ]; then
             echo "✅ Using specified version override: $VERSION_OVERRIDE"
