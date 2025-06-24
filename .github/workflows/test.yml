@@ -1,4 +1,4 @@
-name: Build and Commit Slurm DEB Packages
+name: Build and Commit Slurm DEB Packages - Testing
 
 on:
   workflow_dispatch:
@@ -43,7 +43,7 @@ jobs:
             TAGS=$(curl -s https://api.github.com/repos/SchedMD/slurm/tags | jq -r '.[].name')
 
             # Filter for stable release tags (e.g., slurm-23-11-7-1) and get the latest
-            LATEST_TAG=$(echo "$tags" \
+            LATEST_TAG=$(echo "$TAGS" \
             | grep -E '^slurm-[0-9]+-[0-9]+-[0-9]+-[0-9]+$' \
             | sort -V \
             | tail -n1)
