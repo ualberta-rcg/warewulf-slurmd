@@ -67,30 +67,31 @@ jobs:
       - name: 🛑 Check if DEBs for this version already exist
         id: version-check
         run: |
-          set -e
+          version="${{ steps.vars.outputs.version }}"
+          debver="$(echo "$version" | sed 's/^\([0-9]*\)-\([0-9]*\)-\([0-9]*\)-\([0-9]*\)$/\1.\2.\3-\4/')"
+          debdir="$GITHUB_WORKSPACE/slurm-debs"
           OS_CODENAME="u2404" 
-          
-          # The version from the previous step
-          VERSION="${{ steps.vars.outputs.version }}"
-          
-          # Convert Slurm version (e.g., 23-11-7-1) to Debian version (e.g., 23.11.7-1)
-          DEB_VERSION=$(echo "$VERSION" | sed 's/-/./g; s/\./-/3')
-          DEB_DIR="$GITHUB_WORKSPACE/slurm-debs"
 
-          echo "🔍 Checking for existing DEBs for version ${VERSION} (Debian version ${DEB_VERSION})"
-          
-          # Use `find` and `wc -l` to count matching files
-          # The find command will return non-zero if no files are found, so we use `|| true`
-          COUNT=$(find "$DEB_DIR" -type f -name "*_${DEB_VERSION}_*_${OS_CODENAME}.deb" 2>/dev/null | wc -l)
+          echo "🔍 Inputs:"
+          echo "  Raw version       = $version"
+          echo "  Debian version    = $debver"
+          echo "  Search directory  = $debdir"
+          echo "  Search pattern    = *_${debver}_*_${OS_CODENAME}.deb"
 
-          if [ "$COUNT" -gt 0 ]; then
-            echo "✅ DEBs for Slurm ${VERSION} on ${OS_CODENAME} already exist. Skipping build."
+          mkdir -p "$debdir"
+          echo "📂 Directory contents before search:"
+          ls -l "$debdir" || true
+
+          count=$(find "$debdir" -type f -name "*_${debver}_*_${OS_CODENAME}.deb" | wc -l || true)
+
+          if [ "$count" -gt 0 ]; then
+            echo "✅ DEBs for Slurm $version already exist. Skipping build."
             echo "skip_build=true" >> $GITHUB_OUTPUT
           else
-            echo "🚧 No existing DEBs found. Proceeding with build."
+            echo "🚧 No existing DEBs for Slurm $version. Proceeding with build."
             echo "skip_build=false" >> $GITHUB_OUTPUT
           fi
-
+          
       - name: 🛠 Install Build Dependencies
         if: steps.version-check.outputs.skip_build == 'false'
         run: |
