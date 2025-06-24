@@ -1,4 +1,4 @@
-name: Build and Commit Slurm DEB Packages - Testing
+name: Build and Commit Slurm DEB Packages
 
 on:
   workflow_dispatch:
