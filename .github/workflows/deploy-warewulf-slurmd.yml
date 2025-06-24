@@ -45,8 +45,12 @@ jobs:
 
       - name: 🔧 Configure Build & Verify Dependencies
         id: config
+        env:
+          SLURM_VERSION_OVERRIDE: ${{ github.event.inputs.SLURM_VERSION_OVERRIDE != '' && github.event.inputs.SLURM_VERSION_OVERRIDE || vars.SLURM_VERSION_OVERRIDE != '' && vars.SLURM_VERSION_OVERRIDE || '0' }}
         run: |
           set -e # Exit on any error
+          
+          echo "Effective SLURM_VERSION_OVERRIDE: $SLURM_VERSION_OVERRIDE"
           
           # Helper function to lowercase values
           lower() { echo "$1" | tr '[:upper:]' '[:lower:]'; }
@@ -61,8 +65,6 @@ jobs:
           # ---
           echo ""
           echo "## 2. Processing Slurm Configuration & Verifying DEBs ##"
-          
-          SLURM_VERSION_OVERRIDE="${{ github.event.inputs.SLURM_VERSION_OVERRIDE || vars.SLURM_VERSION_OVERRIDE || '0' }}"
 
           if [ -n "$SLURM_VERSION_OVERRIDE" ] && [ "$SLURM_VERSION_OVERRIDE" != "0" ]; then
             echo "✅ Using specified Slurm version override: $SLURM_VERSION_OVERRIDE"
