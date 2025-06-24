@@ -43,7 +43,7 @@ jobs:
       - name: 🛠️ Checkout Repository
         uses: actions/checkout@v4
 
-- name: 🔧 Configure Build & Verify Dependencies
+      - name: 🔧 Configure Build & Verify Dependencies
         id: config
         # Pass both the input and the var as distinct environment variables
         env:
