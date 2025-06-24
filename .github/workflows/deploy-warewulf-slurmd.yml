@@ -4,7 +4,28 @@ on:
   push:
     branches:
       - latest
-  workflow_dispatch: # Allows manual trigger in the Actions UI
+  workflow_dispatch:
+    inputs:
+      NVIDIA_INSTALL_ENABLED:
+        description: 'Enable NVIDIA driver installation (1=Yes, 0=No).'
+        required: true
+        type: choice
+        options:
+          - '1'
+          - '0'
+        default: '1'
+      NVIDIA_DRIVER_VERSION_OVERRIDE:
+        description: 'Specific driver version (e.g., 550.90.07). Use "0" for latest production.'
+        required: false
+        default: '0'
+      NVIDIA_DRIVER_ARCHITECTURE:
+        description: 'Driver architecture to download (x86_64 or aarch64).'
+        required: true
+        type: choice
+        options:
+          - 'x86_64'
+          - 'aarch64'
+        default: 'x86_64'
 
 env:
   TAG_NAME: ${{ github.ref_name }}
@@ -24,7 +45,7 @@ jobs:
           # Helper function to lowercase values
           lower() { echo "$1" | tr '[:upper:]' '[:lower:]'; }
 
-          # --- Normalize Standard Options ---
+          # --- Normalize Standard Options (using repo variables only) ---
           val="$(lower "${{ vars.DISABLE_AUTOLOGIN }}")"
           [ "$val" = "1" ] || [ "$val" = "true" ] && echo "DISABLE_AUTOLOGIN=true" >> $GITHUB_OUTPUT || echo "DISABLE_AUTOLOGIN=false" >> $GITHUB_OUTPUT
 
@@ -34,12 +55,14 @@ jobs:
           val="${{ vars.SLURM_VERSION_OVERRIDE }}"
           [ "$val" != "0" ] && [ -n "$val" ] && echo "SLURM_VERSION=$val" >> $GITHUB_OUTPUT || echo "SLURM_VERSION=latest" >> $GITHUB_OUTPUT
           
-          # --- Normalize NVIDIA Options ---
+          # --- Process NVIDIA Configuration with Input/Variable Priority ---
           echo "## Processing NVIDIA Configuration ##"
           
+          # Priority: Manual Input -> Repo Variable -> Default '0' (disabled)
+          ENABLED_INPUT="$(lower "${{ github.event.inputs.NVIDIA_INSTALL_ENABLED || vars.NVIDIA_INSTALL_ENABLED || '0' }}")"
+          
           IS_NVIDIA_ENABLED=false
-          val="$(lower "${{ vars.NVIDIA_INSTALL_ENABLED }}")"
-          if [ "$val" = "1" ] || [ "$val" = "true" ]; then
+          if [ "$ENABLED_INPUT" = "1" ] || [ "$ENABLED_INPUT" = "true" ]; then
             IS_NVIDIA_ENABLED=true
             echo "NVIDIA_INSTALL_ENABLED=true" >> $GITHUB_OUTPUT
           else
@@ -51,11 +74,14 @@ jobs:
 
           # --- Determine NVIDIA Driver URL if Enabled ---
           if [ "$IS_NVIDIA_ENABLED" = "true" ]; then
-            VERSION_OVERRIDE="${{ vars.NVIDIA_DRIVER_VERSION_OVERRIDE }}"
-            ARCH="${{ vars.NVIDIA_DRIVER_ARCHITECTURE || 'x86_64' }}" # Default to x86_64 if not set
+            # Priority: Manual Input -> Repo Variable -> Default '0' (auto)
+            VERSION_OVERRIDE="${{ github.event.inputs.NVIDIA_DRIVER_VERSION_OVERRIDE || vars.NVIDIA_DRIVER_VERSION_OVERRIDE || '0' }}"
+            # Priority: Manual Input -> Repo Variable -> Default 'x86_64'
+            ARCH="${{ github.event.inputs.NVIDIA_DRIVER_ARCHITECTURE || vars.NVIDIA_DRIVER_ARCHITECTURE || 'x86_64' }}"
             RELEASES_URL="https://docs.nvidia.com/datacenter/tesla/drivers/releases.json"
 
             echo "NVIDIA Install is ENABLED."
+            echo "  Config Source: ${{ github.event_name == 'workflow_dispatch' && 'Manual Trigger' || 'Repo Variables (Push Trigger)' }}"
             echo "  Architecture: $ARCH"
             
             echo "Downloading driver release info..."
@@ -67,13 +93,9 @@ jobs:
             
             if [ -n "$VERSION_OVERRIDE" ] && [ "$VERSION_OVERRIDE" != "0" ]; then
               echo "  Mode: Using specific version override: $VERSION_OVERRIDE"
-              # Search all branches for the specific version
-              DRIVER_URL=$(echo "$RELEASES_JSON" | jq -r --arg ver "$VERSION_OVERRIDE" --arg arch "$ARCH" '
-                .[] | .driver_info[] | select(.release_version == $ver) | .runfile_url[$arch]
-              ' | head -n1)
+              DRIVER_URL=$(echo "$RELEASES_JSON" | jq -r --arg ver "$VERSION_OVERRIDE" --arg arch "$ARCH" '.[] | .driver_info[] | select(.release_version == $ver) | .runfile_url[$arch]' | head -n1)
             else
               echo "  Mode: Detecting latest 'production branch' version."
-              # Find the first entry in the first "production branch"
               LATEST_INFO=$(echo "$RELEASES_JSON" | jq 'first(.[] | select(.type == "production branch")) | .driver_info[0]')
               DRIVER_URL=$(echo "$LATEST_INFO" | jq -r --arg arch "$ARCH" '.runfile_url[$arch]')
             fi
@@ -95,6 +117,7 @@ jobs:
           echo "## Final Build Configuration ##"
           cat $GITHUB_OUTPUT
 
+      # The rest of your steps remain exactly the same
       - name: 🛠️ Checkout Repository
         uses: actions/checkout@v4
 
@@ -105,7 +128,7 @@ jobs:
             -t ${{ secrets.DOCKER_HUB_REPO }}:$TAG_NAME .
 
       - name: 🚀 Login to DockerHub
-        if: github.event_name == 'push' # Only push on 'push' events, not on manual dispatches for testing
+        if: github.event_name == 'push'
         run: |
           echo "${{ secrets.DOCKER_HUB_TOKEN }}" | docker login -u "${{ secrets.DOCKER_HUB_USER }}" --password-stdin
 
