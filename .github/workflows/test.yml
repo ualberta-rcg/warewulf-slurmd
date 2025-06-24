@@ -33,7 +33,7 @@ jobs:
           # Use the manual dispatch input first, then the repo variable as a fallback
           VERSION_OVERRIDE="${{ github.event.inputs.slurm_version_override || vars.SLURM_VERSION_OVERRIDE }}"
 
-          if [ -n "$VERSION_OVERRIDE" ]; then
+          if [ -n "$VERSION_OVERRIDE" ] && [ "$VERSION_OVERRIDE" != "0" ]; then
             echo "✅ Using specified version override: $VERSION_OVERRIDE"
             VERSION="$VERSION_OVERRIDE"
           else
