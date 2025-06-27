@@ -232,14 +232,14 @@ RUN if [ "$NVIDIA_INSTALL_ENABLED" = "true" ]; then \
         rm -rf /var/lib/apt/lists/* /tmp/* /build; \
     fi
 
-# ---  9. Install Slurm ---
+# --- 9. Prepare Slurm DEBs ---
 COPY slurm-debs/*.deb /slurm-debs/
+
 RUN mkdir -p /slurm-debs && \
     if [ "$SLURM_VERSION" != "0" ]; then \
-        apt-get update && \
         debver=$(echo "$SLURM_VERSION" | sed 's/^\([0-9]*\)-\([0-9]*\)-\([0-9]*\)-\([0-9]*\)$/\1.\2.\3-\4/') && \
-        apt-get install -y /slurm-debs/*_${debver}_*.deb && \
-        apt-get clean && rm -rf /var/lib/apt/lists/*; \
+        echo "🧹 Keeping only *_${debver}_*.deb packages..." && \
+        find /slurm-debs -type f -name '*.deb' ! -name "*_${debver}_*.deb" -delete; \
     fi
 
 
