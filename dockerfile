@@ -127,7 +127,7 @@ RUN apt-get update && apt-get install -y \
     systemd-tmpfiles --create --prefix /var/log/journal && \
     rm -rf /var/lib/apt/lists/*
 
-# Install specific kernel if provided, otherwise use generic
+# --- Install Kernel: Specific or Latest ---
 RUN if [ "$KERNEL_VERSION" != "latest" ]; then \
         apt-get update && apt-get install -y \
             linux-image-${KERNEL_VERSION} \
@@ -135,11 +135,16 @@ RUN if [ "$KERNEL_VERSION" != "latest" ]; then \
             linux-modules-${KERNEL_VERSION} \
             linux-modules-extra-${KERNEL_VERSION} && \
         ln -s /usr/src/linux-headers-${KERNEL_VERSION} /lib/modules/${KERNEL_VERSION}/build && \
+        echo "$KERNEL_VERSION" > /kernel_version.txt && \
         apt-get clean && rm -rf /var/lib/apt/lists/*; \
     else \
         apt-get update && apt-get install -y \
             linux-image-generic \
             linux-headers-generic && \
+        KVER=$(dpkg-query -W -f='${Version}' linux-image-generic | sed 's/-.*//') && \
+        KERNEL=$(ls -1d /lib/modules/* | sort -V | tail -n1 | xargs -n1 basename) && \
+        ln -s /usr/src/linux-headers-${KERNEL} /lib/modules/${KERNEL}/build && \
+        echo "$KERNEL" > /kernel_version.txt && \
         apt-get clean && rm -rf /var/lib/apt/lists/*; \
     fi
 
@@ -205,8 +210,8 @@ RUN if [ "$NVIDIA_INSTALL_ENABLED" = "true" ]; then \
                           --no-nouveau-check \
                           --no-systemd \
                           --no-check-for-alternate-installs \
-                          --kernel-name=${KERNEL_VERSION} \
-                          --kernel-source-path=/lib/modules/${KERNEL_VERSION}/build \
+                          --kernel-name=$(cat /kernel_version.txt) \
+                          --kernel-source-path=/lib/modules/$(cat /kernel_version.txt)/build \
                           --x-prefix=/usr \
                           --x-module-path=/usr/lib/xorg/modules \
                           --x-library-path=/usr/lib && \
