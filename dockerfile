@@ -121,32 +121,15 @@ RUN apt-get update && apt-get install -y \
     libpmix-bin \
     rrdtool \
     lua5.3 \
-    dkms && \
-    apt-get clean && \
-    mkdir -p /var/log/journal && \
+    dkms \
+    linux-image-${KERNEL_VERSION} \
+    linux-headers-${KERNEL_VERSION} \
+    linux-modules-${KERNEL_VERSION} \
+    linux-modules-extra-${KERNEL_VERSION} && \
+    ln -s /usr/src/linux-headers-${KERNEL_VERSION} /lib/modules/${KERNEL_VERSION}/build && \
     systemd-tmpfiles --create --prefix /var/log/journal && \
-    rm -rf /var/lib/apt/lists/*
-
-# --- Install Kernel: Specific or Latest ---
-RUN if [ "$KERNEL_VERSION" != "latest" ]; then \
-        apt-get update && apt-get install -y \
-            linux-image-${KERNEL_VERSION} \
-            linux-headers-${KERNEL_VERSION} \
-            linux-modules-${KERNEL_VERSION} \
-            linux-modules-extra-${KERNEL_VERSION} && \
-        ln -s /usr/src/linux-headers-${KERNEL_VERSION} /lib/modules/${KERNEL_VERSION}/build && \
-        echo "$KERNEL_VERSION" > /kernel_version.txt && \
-        apt-get clean && rm -rf /var/lib/apt/lists/*; \
-    else \
-        apt-get update && apt-get install -y \
-            linux-image-generic \
-            linux-headers-generic && \
-        KVER=$(dpkg-query -W -f='${Version}' linux-image-generic | sed 's/-.*//') && \
-        KERNEL=$(ls -1d /lib/modules/* | sort -V | tail -n1 | xargs -n1 basename) && \
-        ln -s /usr/src/linux-headers-${KERNEL} /lib/modules/${KERNEL}/build && \
-        echo "$KERNEL" > /kernel_version.txt && \
-        apt-get clean && rm -rf /var/lib/apt/lists/*; \
-    fi
+    echo "$KERNEL_VERSION" > /kernel_version.txt && \
+    apt-get clean && rm -rf /var/lib/apt/lists/* 
 
 # --- 3. Temporarily disable service configuration ---
 RUN echo '#!/bin/sh\nexit 101' > /usr/sbin/policy-rc.d && chmod +x /usr/sbin/policy-rc.d
