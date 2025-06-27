@@ -98,7 +98,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y \
             devscripts equivs build-essential fakeroot debhelper curl jq git \
-            libpmix-dev libpmix2 libopenmpi-dev libopenmpi3 openmpi-bin
+            libpmix-dev libpmix2 libopenmpi-dev libopenmpi3 openmpi-bin libnvidia-ml-dev
 
       - name: 📥 Download and Extract Slurm Source
         if: steps.version-check.outputs.skip_build == 'false'
