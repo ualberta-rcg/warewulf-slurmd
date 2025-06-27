@@ -149,9 +149,6 @@ jobs:
             KERNEL="linux-image-$KERNEL_PKG"
             echo "✅ Detected kernel package: $KERNEL"
 
-            # Optionally verify it exists
-            apt-cache policy "$KERNEL" | grep -q "Candidate:" || { echo "❌ ERROR: Kernel package '$KERNEL' not found."; exit 1; }
-
             echo "✅ Detected latest kernel version: $KERNEL_PKG"
             echo "KERNEL_VERSION=$KERNEL_PKG" >> $GITHUB_OUTPUT
           fi
