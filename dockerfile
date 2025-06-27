@@ -292,7 +292,11 @@ RUN if [ -n "$KERNEL_VERSION" ] && [ "$KERNEL_VERSION" != "latest" ]; then \
     fi
 	
 # --- 14. Final Cleanup ---
-RUN apt-get purge -y \
+RUN rm -f /usr/bin/systemctl && \
+    rm -rf /tmp/bin && \
+    [ -f /usr/bin/systemctl.bak ] && mv /usr/bin/systemctl.bak /usr/bin/systemctl || true && \
+    rm -f /usr/sbin/policy-rc.d && \
+    apt-get purge -y \
         cmake \
         libtool \
         zlib1g-dev \
