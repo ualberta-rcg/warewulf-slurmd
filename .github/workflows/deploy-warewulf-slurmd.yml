@@ -198,18 +198,24 @@ jobs:
       - name: 🏷️ Generate Docker Tag Name
         id: taggen
         run: |
-          SLURM_TAG="${{ steps.config.outputs.SLURM_VERSION }}"
-          KERNEL_TAG="${{ steps.config.outputs.KERNEL_VERSION }}"
-          NVIDIA_TAG="${{ steps.config.outputs.NVIDIA_INSTALL_ENABLED }}"
-          FIRSTBOOT_TAG="${{ steps.config.outputs.FIRSTBOOT_ENABLED }}"
-          AUTOLOGIN_TAG="${{ steps.config.outputs.DISABLE_AUTOLOGIN }}"
+          SLURM_VER="${{ steps.config.outputs.SLURM_VERSION }}"
+          KERNEL_VER="${{ steps.config.outputs.KERNEL_VERSION }}"
+          NVIDIA_ENABLED="${{ steps.config.outputs.NVIDIA_INSTALL_ENABLED }}"
+          NVIDIA_URL="${{ steps.config.outputs.NVIDIA_DRIVER_URL }}"
 
-          # Normalize/slugify
-          SLURM_TAG=$(echo "$SLURM_TAG" | tr '.' '-' | tr '[:upper:]' '[:lower:]')
-          KERNEL_TAG=$(echo "$KERNEL_TAG" | tr '.' '-' | tr '[:upper:]' '[:lower:]')
-          TAG_NAME="slurm-${SLURM_TAG}_kernel-${KERNEL_TAG}_nvidia-${NVIDIA_TAG}_firstboot-${FIRSTBOOT_TAG}_autologin-${AUTOLOGIN_TAG}"
-          
-          # Output
+          # Slugify
+          SLURM_VER=$(echo "S$SLURM_VER" | tr '.' '-' | tr '[:upper:]' '[:lower:]')
+          KERNEL_VER=$(echo "K$KERNEL_VER" | tr '.' '-' | tr '[:upper:]' '[:lower:]')
+
+          TAG_NAME="${SLURM_VER}-${KERNEL_VER}-U24-04"
+
+          if [ "$NVIDIA_ENABLED" = "true" ]; then
+            # Extract version from URL: NVIDIA-Linux-x86_64-570.148.08.run
+            NVIDIA_VER=$(basename "$NVIDIA_URL" | grep -oP '[0-9]+\.[0-9]+\.[0-9]+')
+            NVIDIA_VER=$(echo "$NVIDIA_VER" | tr '.' '-')  # slugify
+            TAG_NAME="${TAG_NAME}-N${NVIDIA_VER}"
+          fi
+
           echo "Generated TAG_NAME: $TAG_NAME"
           echo "TAG_NAME=$TAG_NAME" >> $GITHUB_OUTPUT
           
