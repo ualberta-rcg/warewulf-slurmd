@@ -14,6 +14,15 @@ ARG FIRSTBOOT_ENABLED
 # --- 0. Set root user ---
 USER root
 
+# --- 2. Set root and user accounts ---
+RUN echo "root:changeme" | chpasswd && \
+    groupadd -r -g 999 slurm && \
+    useradd -r -u 999 -g slurm -s /bin/false slurm && \
+    groupadd -g 998 wwgroup && \
+    useradd -m -u 998 -d /local/home/wwuser -g wwgroup -s /bin/bash wwuser && \
+    echo "wwuser:wwpassword" | chpasswd && \
+    usermod -aG sudo wwuser
+
 # --- 1. Install Core Tools, Debugging, and Dependencies ---
 RUN apt-get update && apt-get install -y \
     sudo \
@@ -133,15 +142,6 @@ RUN if [ "$KERNEL_VERSION" != "latest" ]; then \
             linux-headers-generic && \
         apt-get clean && rm -rf /var/lib/apt/lists/*; \
     fi
-
-# --- 2. Set root and user accounts ---
-RUN echo "root:changeme" | chpasswd && \
-    groupadd -r -g 999 slurm && \
-    useradd -r -u 999 -g slurm -s /bin/false slurm && \
-    groupadd -g 998 wwgroup && \
-    useradd -m -u 998 -d /local/home/wwuser -g wwgroup -s /bin/bash wwuser && \
-    echo "wwuser:wwpassword" | chpasswd && \
-    usermod -aG sudo wwuser
 
 # --- 3. Temporarily disable service configuration ---
 RUN echo '#!/bin/sh\nexit 101' > /usr/sbin/policy-rc.d && chmod +x /usr/sbin/policy-rc.d
