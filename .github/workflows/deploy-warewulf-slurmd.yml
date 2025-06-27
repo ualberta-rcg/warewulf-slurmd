@@ -109,6 +109,13 @@ jobs:
           fi
           
           echo -e "\n## 3. Processing Kernel Configuration & Verifying Packages ##"
+          # Normalize Kernel Version Override
+          KERNEL_VERSION_OVERRIDE="0"
+          if [ -n "$INPUT_KERNEL_VERSION" ] && [ "$INPUT_KERNEL_VERSION" != "0" ]; then
+            KERNEL_VERSION_OVERRIDE="$INPUT_KERNEL_VERSION"
+          elif [ -n "$VAR_KERNEL_VERSION" ] && [ "$VAR_KERNEL_VERSION" != "0" ]; then
+            KERNEL_VERSION_OVERRIDE="$VAR_KERNEL_VERSION"
+          fi
           if [ "$KERNEL_VERSION_OVERRIDE" != "0" ]; then
             TARGET_KERNEL_VERSION="$KERNEL_VERSION_OVERRIDE"
             echo "🎯 Target Kernel Version is specific: $TARGET_KERNEL_VERSION"
