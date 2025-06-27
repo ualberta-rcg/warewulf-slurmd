@@ -225,11 +225,9 @@ jobs:
             -t ${{ secrets.DOCKER_HUB_REPO }}:${{ steps.taggen.outputs.TAG_NAME }} .
 
       - name: 🚀 Login to DockerHub
-        if: github.event_name == 'push'
         run: |
           echo "${{ secrets.DOCKER_HUB_TOKEN }}" | docker login -u "${{ secrets.DOCKER_HUB_USER }}" --password-stdin
 
       - name: 🚀 Push Image to DockerHub
-        if: github.event_name == 'push'
         run: |
-          docker push ${{ secrets.DOCKER_HUB_REPO }}:${{ steps.taggen.outputs.TAG_NAME }}
+          docker push ${{ secrets.DOCKER_HUB_REPO }}:${{ steps.taggen.outputs.TAG_NAME }}     
