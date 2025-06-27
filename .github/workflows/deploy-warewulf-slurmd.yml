@@ -194,6 +194,24 @@ jobs:
           echo "NVIDIA_DRIVER_URL=${NVIDIA_DRIVER_URL}" >> $GITHUB_OUTPUT
           echo "FIRSTBOOT_ENABLED=${FIRSTBOOT_ENABLED}" >> $GITHUB_OUTPUT
           cat $GITHUB_OUTPUT
+
+      - name: 🏷️ Generate Docker Tag Name
+        id: taggen
+        run: |
+          SLURM_TAG="${{ steps.config.outputs.SLURM_VERSION }}"
+          KERNEL_TAG="${{ steps.config.outputs.KERNEL_VERSION }}"
+          NVIDIA_TAG="${{ steps.config.outputs.NVIDIA_INSTALL_ENABLED }}"
+          FIRSTBOOT_TAG="${{ steps.config.outputs.FIRSTBOOT_ENABLED }}"
+          AUTOLOGIN_TAG="${{ steps.config.outputs.DISABLE_AUTOLOGIN }}"
+
+          # Normalize/slugify
+          SLURM_TAG=$(echo "$SLURM_TAG" | tr '.' '-' | tr '[:upper:]' '[:lower:]')
+          KERNEL_TAG=$(echo "$KERNEL_TAG" | tr '.' '-' | tr '[:upper:]' '[:lower:]')
+          TAG_NAME="slurm-${SLURM_TAG}_kernel-${KERNEL_TAG}_nvidia-${NVIDIA_TAG}_firstboot-${FIRSTBOOT_TAG}_autologin-${AUTOLOGIN_TAG}"
+          
+          # Output
+          echo "Generated TAG_NAME: $TAG_NAME"
+          echo "TAG_NAME=$TAG_NAME" >> $GITHUB_OUTPUT
           
       - name: 🐳 Build Docker Image
         run: |
@@ -204,7 +222,7 @@ jobs:
             --build-arg NVIDIA_INSTALL_ENABLED=${{ steps.config.outputs.NVIDIA_INSTALL_ENABLED }} \
             --build-arg NVIDIA_DRIVER_URL=${{ steps.config.outputs.NVIDIA_DRIVER_URL }} \
             --build-arg FIRSTBOOT_ENABLED=${{ steps.config.outputs.FIRSTBOOT_ENABLED }} \
-            -t ${{ secrets.DOCKER_HUB_REPO }}:$TAG_NAME .
+            -t ${{ secrets.DOCKER_HUB_REPO }}:${{ steps.taggen.outputs.TAG_NAME }} .
 
       - name: 🚀 Login to DockerHub
         if: github.event_name == 'push'
@@ -214,4 +232,4 @@ jobs:
       - name: 🚀 Push Image to DockerHub
         if: github.event_name == 'push'
         run: |
-          docker push ${{ secrets.DOCKER_HUB_REPO }}:$TAG_NAME
+          docker push ${{ secrets.DOCKER_HUB_REPO }}:${{ steps.taggen.outputs.TAG_NAME }}
