@@ -276,7 +276,6 @@ RUN rm -f /usr/bin/systemctl && \
     apt-get autoremove -y && \
     apt-get clean && \
     rm -rf \
-        /slurm-debs \
         /usr/src/* \
         /var/lib/apt/lists/* \
         /tmp/* \
