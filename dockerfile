@@ -193,8 +193,8 @@ RUN if [ "$NVIDIA_INSTALL_ENABLED" = "true" ]; then \
                           --no-nouveau-check \
                           --no-systemd \
                           --no-check-for-alternate-installs \
-                          --kernel-name=$(cat /kernel_version.txt) \
-                          --kernel-source-path=/lib/modules/$(cat /kernel_version.txt)/build \
+                          --kernel-name=${KERNEL_VERSION} \
+                          --kernel-source-path=/lib/modules/${KERNEL_VERSION}/build \
                           --x-prefix=/usr \
                           --x-module-path=/usr/lib/xorg/modules \
                           --x-library-path=/usr/lib && \
@@ -253,11 +253,7 @@ RUN chmod +x /usr/local/sbin/firstboot.sh && \
     fi
 
 # --- 12. Generate Initramfs for Selected Kernel ---
-RUN if [ -n "$KERNEL_VERSION" ] && [ "$KERNEL_VERSION" != "latest" ]; then \
-        update-initramfs -u -k "$KERNEL_VERSION"; \
-    else \
-        update-initramfs -u; \
-    fi
+RUN update-initramfs -u -k "$KERNEL_VERSION"
 	
 # --- 13. Final Cleanup ---
 RUN rm -f /usr/bin/systemctl && \
