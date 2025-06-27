@@ -143,11 +143,17 @@ jobs:
             [ -z "$GENERIC_VERSION" ] && { echo "❌ ERROR: Could not find version of linux-image-generic."; exit 1; }
 
             # Extract real kernel version from available modules (after a dry-run install)
-            KERNEL_PKG=$(apt-cache show "linux-image-generic=$GENERIC_VERSION" | grep -E '^Depends:' | sed 's/.*linux-image-\([^ ]*\).*/\1/')
+            KERNEL_PKG=$(apt-cache show "linux-image-generic=$GENERIC_VERSION" \
+              | grep -E '^Depends:' \
+              | sed -E 's/.*linux-image-([0-9]+\.[0-9]+\.[0-9]+-[0-9]+-generic).*/\1/' \
+              | head -n1)
             [ -z "$KERNEL_PKG" ] && { echo "❌ ERROR: Could not parse real kernel package name."; exit 1; }
 
             KERNEL="linux-image-$KERNEL_PKG"
             echo "✅ Detected kernel package: $KERNEL"
+
+            # Optionally verify it exists
+            apt-cache policy "$KERNEL" | grep -q "Candidate:" || { echo "❌ ERROR: Kernel package '$KERNEL' not found."; exit 1; }
 
             echo "✅ Detected latest kernel version: $KERNEL_PKG"
             echo "KERNEL_VERSION=$KERNEL_PKG" >> $GITHUB_OUTPUT
