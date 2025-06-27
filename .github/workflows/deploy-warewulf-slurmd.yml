@@ -34,14 +34,14 @@ on:
         description: 'Specific NVIDIA driver version (e.g., 550.90.07). Use "0" for latest.'
         required: false
         default: '0'
-      NVIDIA_DRIVER_ARCHITECTURE:
-        description: 'NVIDIA driver architecture (x86_64 or aarch64).'
+      FIRSTBOOT_ENABLED:
+        description: 'Enable firstboot Ansible service (1=Yes, 0=No).'
         required: true
         type: choice
         options:
-          - 'x86_64'
-          - 'aarch64'
-        default: 'x86_64'
+          - '1' # True
+          - '0' # False
+        default: '1'
 
 env:
   TAG_NAME: ${{ github.ref_name }}
@@ -74,15 +74,16 @@ jobs:
           INPUT_NVIDIA_VERSION: ${{ github.event.inputs.NVIDIA_DRIVER_VERSION_OVERRIDE }}
           VAR_NVIDIA_VERSION: ${{ vars.NVIDIA_DRIVER_VERSION_OVERRIDE }}
 
-          INPUT_NVIDIA_ARCH: ${{ github.event.inputs.NVIDIA_DRIVER_ARCHITECTURE }}
-          VAR_NVIDIA_ARCH: ${{ vars.NVIDIA_DRIVER_ARCHITECTURE }}
+          INPUT_FIRSTBOOT_ENABLED: ${{ github.event.inputs.FIRSTBOOT_ENABLED }}
+          VAR_FIRSTBOOT_ENABLED: ${{ vars.FIRSTBOOT_ENABLED }}
         run: |
           set -e # Exit on any error
           
           echo "--- Debugging Raw Input/Variable Values ---"
-          # (Add any new debug values here if needed)
           echo "INPUT_KERNEL_VERSION: '$INPUT_KERNEL_VERSION'"
           echo "VAR_KERNEL_VERSION:   '$VAR_KERNEL_VERSION'"
+          echo "INPUT_FIRSTBOOT_ENABLED: '$INPUT_FIRSTBOOT_ENABLED'"
+          echo "VAR_FIRSTBOOT_ENABLED:   '$VAR_FIRSTBOOT_ENABLED'"
           echo "-------------------------------------------"
 
           lower() { echo "$1" | tr '[:upper:]' '[:lower:]'; }
@@ -97,8 +98,17 @@ jobs:
             echo "DISABLE_AUTOLOGIN=false" >> $GITHUB_OUTPUT
           fi
           
-          # ---
-          echo -e "\n## 2. Processing Kernel Configuration & Verifying Packages ##"
+          echo "## 2. Normalizing Firstboot Option ##"
+          FIRSTBOOT_VAL="1"
+          if [ -n "$INPUT_FIRSTBOOT_ENABLED" ]; then FIRSTBOOT_VAL="$INPUT_FIRSTBOOT_ENABLED";
+          elif [ -n "$VAR_FIRSTBOOT_ENABLED" ]; then FIRSTBOOT_VAL="$VAR_FIRSTBOOT_ENABLED"; fi
+          if [ "$(lower "$FIRSTBOOT_VAL")" = "1" ] || [ "$(lower "$FIRSTBOOT_VAL")" = "true" ]; then
+            echo "FIRSTBOOT_ENABLED=true" >> $GITHUB_OUTPUT
+          else
+            echo "FIRSTBOOT_ENABLED=false" >> $GITHUB_OUTPUT
+          fi
+          
+          echo -e "\n## 3. Processing Kernel Configuration & Verifying Packages ##"
           KERNEL_VERSION_OVERRIDE="0"
           if [ -n "$INPUT_KERNEL_VERSION" ] && [ "$INPUT_KERNEL_VERSION" != "0" ]; then KERNEL_VERSION_OVERRIDE="$INPUT_KERNEL_VERSION";
           elif [ -n "$VAR_KERNEL_VERSION" ] && [ "$VAR_KERNEL_VERSION" != "0" ]; then KERNEL_VERSION_OVERRIDE="$VAR_KERNEL_VERSION"; fi
@@ -112,12 +122,10 @@ jobs:
             IMAGE_PKG="linux-image-${TARGET_KERNEL_VERSION}"
             HEADERS_PKG="linux-headers-${TARGET_KERNEL_VERSION}"
 
-            # Check for the image package
             if ! apt-cache policy "$IMAGE_PKG" | grep -q "Candidate:"; then
               echo "❌ ERROR: Kernel image package '$IMAGE_PKG' not found in apt repositories."
               exit 1
             fi
-            # Check for the headers package
             if ! apt-cache policy "$HEADERS_PKG" | grep -q "Candidate:"; then
               echo "❌ ERROR: Kernel headers package '$HEADERS_PKG' not found in apt repositories."
               exit 1
@@ -129,8 +137,7 @@ jobs:
             echo "KERNEL_VERSION=latest" >> $GITHUB_OUTPUT
           fi
           
-          # ---
-          echo -e "\n## 3. Processing Slurm Configuration & Verifying DEBs ##"
+          echo -e "\n## 4. Processing Slurm Configuration & Verifying DEBs ##"
           SLURM_VERSION_OVERRIDE="0"
           if [ -n "$INPUT_SLURM_VERSION" ] && [ "$INPUT_SLURM_VERSION" != "0" ]; then SLURM_VERSION_OVERRIDE="$INPUT_SLURM_VERSION";
           elif [ -n "$VAR_SLURM_VERSION" ] && [ "$VAR_SLURM_VERSION" != "0" ]; then SLURM_VERSION_OVERRIDE="$VAR_SLURM_VERSION"; fi
@@ -149,8 +156,7 @@ jobs:
           [ "$count" -eq 0 ] && { echo "❌ ERROR: Slurm DEB packages for version $TARGET_SLURM_VERSION not found!"; exit 1; }
           echo "✅ Found $count matching DEB packages."
 
-          # ---
-          echo -e "\n## 4. Processing NVIDIA Configuration ##"
+          echo -e "\n## 5. Processing NVIDIA Configuration ##"
           IS_NVIDIA_ENABLED=false
           ENABLED_VAL="0"
           if [ -n "$INPUT_NVIDIA_ENABLED" ]; then ENABLED_VAL="$INPUT_NVIDIA_ENABLED";
@@ -160,13 +166,10 @@ jobs:
           NVIDIA_DRIVER_URL="0"
           if [ "$IS_NVIDIA_ENABLED" = "true" ]; then
             echo "NVIDIA Install is ENABLED."
-            # Determine Version
             NVIDIA_VERSION_OVERRIDE="0"
             if [ -n "$INPUT_NVIDIA_VERSION" ] && [ "$INPUT_NVIDIA_VERSION" != "0" ]; then NVIDIA_VERSION_OVERRIDE="$INPUT_NVIDIA_VERSION";
             elif [ -n "$VAR_NVIDIA_VERSION" ] && [ "$VAR_NVIDIA_VERSION" != "0" ]; then NVIDIA_VERSION_OVERRIDE="$VAR_NVIDIA_VERSION"; fi
-            # Determine Arch
-            if [ -n "$INPUT_NVIDIA_ARCH" ]; then ARCH="$INPUT_NVIDIA_ARCH";
-            elif [ -n "$VAR_NVIDIA_ARCH" ]; then ARCH="$VAR_NVIDIA_ARCH"; else ARCH="x86_64"; fi
+            ARCH="x86_64"
             echo "Effective NVIDIA_VERSION_OVERRIDE: '$NVIDIA_VERSION_OVERRIDE', Arch: '$ARCH'"
 
             RELEASES_JSON=$(curl -sL "https://docs.nvidia.com/datacenter/tesla/drivers/releases.json")
@@ -185,10 +188,11 @@ jobs:
             echo "NVIDIA Install is DISABLED."
           fi
 
-          echo -e "\n## 5. Final Build Configuration ##"
+          echo -e "\n## 6. Final Build Configuration ##"
           echo "SLURM_VERSION=${TARGET_SLURM_VERSION}" >> $GITHUB_OUTPUT
           echo "NVIDIA_INSTALL_ENABLED=${IS_NVIDIA_ENABLED}" >> $GITHUB_OUTPUT
           echo "NVIDIA_DRIVER_URL=${NVIDIA_DRIVER_URL}" >> $GITHUB_OUTPUT
+          echo "FIRSTBOOT_ENABLED=${FIRSTBOOT_ENABLED}" >> $GITHUB_OUTPUT
           cat $GITHUB_OUTPUT
           
       - name: 🐳 Build Docker Image
@@ -199,6 +203,7 @@ jobs:
             --build-arg DISABLE_AUTOLOGIN=${{ steps.config.outputs.DISABLE_AUTOLOGIN }} \
             --build-arg NVIDIA_INSTALL_ENABLED=${{ steps.config.outputs.NVIDIA_INSTALL_ENABLED }} \
             --build-arg NVIDIA_DRIVER_URL=${{ steps.config.outputs.NVIDIA_DRIVER_URL }} \
+            --build-arg FIRSTBOOT_ENABLED=${{ steps.config.outputs.FIRSTBOOT_ENABLED }} \
             -t ${{ secrets.DOCKER_HUB_REPO }}:$TAG_NAME .
 
       - name: 🚀 Login to DockerHub
