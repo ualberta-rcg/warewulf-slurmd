@@ -181,15 +181,6 @@ RUN rm -rf /usr/share/xml/scap/ssg/content && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-# --- 7. Install RKE2 (server mode) ---
-RUN curl -sfL https://get.rke2.io | sh - && \
-    mkdir -p /etc/systemd/system && \
-    mkdir -p /etc/rancher/rke2/ && \
-    cp /usr/local/lib/systemd/system/rke2-server.service /etc/systemd/system/ && \
-    ln -s /etc/systemd/system/rke2-server.service /etc/systemd/system/multi-user.target.wants/rke2-server.service && \
-    mkdir -p /var/log/audit && \
-    export PATH="/var/lib/rancher/rke2/bin:${PATH}"
-
 # --- 8. Install NVIDIA Driver if enabled ---
 RUN if [ "$NVIDIA_INSTALL_ENABLED" = "true" ]; then \
         apt-get update && apt-get install -y \
@@ -229,11 +220,6 @@ RUN if [ "$NVIDIA_INSTALL_ENABLED" = "true" ]; then \
         [ -e /dev/nvidiactl ] || mknod -m 666 /dev/nvidiactl c 195 255 && \
         [ -e /dev/nvidia-uvm ] || mknod -m 666 /dev/nvidia-uvm c 243 0 && \
         [ -e /dev/nvidia-uvm-tools ] || mknod -m 666 /dev/nvidia-uvm-tools c 243 1 && \
-        mkdir -p /nvidia-debs && \
-        wget -O /nvidia-debs/datacenter-gpu-manager_3.3.9_amd64.deb \
-            https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/datacenter-gpu-manager_3.3.9_amd64.deb && \
-        apt-get install -y /nvidia-debs/datacenter-gpu-manager_3.3.9_amd64.deb && \
-        rm -rf /nvidia-debs && \
         apt-get purge -y \
             build-essential \
             pkg-config \
