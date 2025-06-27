@@ -302,11 +302,7 @@ RUN rm -f /usr/bin/systemctl && \
         bpfcc-tools \
         pkg-config \
         build-essential \
-        gettext \
-        xorg-dev \
-        libx11-dev \
-        libxext-dev \
-        libglvnd-dev && \
+        gettext && \
     apt-get autoremove -y && \
     apt-get clean && \
     rm -rf \
