@@ -117,7 +117,7 @@ jobs:
           set -e
           cd /tmp/slurm/slurm-src
           # Use mk-build-deps to install dependencies from debian/control
-          sudo mk-build-deps -ir --tool='apt-get -qq -y --no-install-recommends' debian/control
+          sudo mk-build-deps -ir --tool='apt-get -qq -y ' debian/control
           # Build binary packages only, without signing
           debuild -b -uc -us
 
