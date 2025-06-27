@@ -109,16 +109,12 @@ jobs:
           fi
           
           echo -e "\n## 3. Processing Kernel Configuration & Verifying Packages ##"
-          KERNEL_VERSION_OVERRIDE="0"
-          if [ -n "$INPUT_KERNEL_VERSION" ] && [ "$INPUT_KERNEL_VERSION" != "0" ]; then KERNEL_VERSION_OVERRIDE="$INPUT_KERNEL_VERSION";
-          elif [ -n "$VAR_KERNEL_VERSION" ] && [ "$VAR_KERNEL_VERSION" != "0" ]; then KERNEL_VERSION_OVERRIDE="$VAR_KERNEL_VERSION"; fi
-          
           if [ "$KERNEL_VERSION_OVERRIDE" != "0" ]; then
             TARGET_KERNEL_VERSION="$KERNEL_VERSION_OVERRIDE"
             echo "🎯 Target Kernel Version is specific: $TARGET_KERNEL_VERSION"
             echo "🔎 Verifying kernel packages exist in Ubuntu 24.04 apt repository..."
             sudo apt-get update -qq
-            
+
             IMAGE_PKG="linux-image-${TARGET_KERNEL_VERSION}"
             HEADERS_PKG="linux-headers-${TARGET_KERNEL_VERSION}"
 
@@ -133,8 +129,23 @@ jobs:
             echo "✅ Verified that '$IMAGE_PKG' and '$HEADERS_PKG' are available."
             echo "KERNEL_VERSION=${TARGET_KERNEL_VERSION}" >> $GITHUB_OUTPUT
           else
-            echo "🎯 Target Kernel Version is latest available."
-            echo "KERNEL_VERSION=latest" >> $GITHUB_OUTPUT
+            echo "🎯 Target Kernel Version is latest available from apt (linux-image-generic)..."
+            sudo apt-get update -qq
+
+            GENERIC_VERSION=$(apt-cache policy linux-image-generic | grep Candidate | awk '{print $2}')
+            [ -z "$GENERIC_VERSION" ] && { echo "❌ ERROR: Could not find version of linux-image-generic."; exit 1; }
+
+            # This will list the kernel version installed by linux-image-generic
+            TMP_DIR=$(mktemp -d)
+            pushd "$TMP_DIR" >/dev/null
+            apt-get download "linux-image-generic=$GENERIC_VERSION"
+            dpkg-deb -x *.deb .
+            KERNEL=$(find ./lib/modules -maxdepth 1 -mindepth 1 -type d | head -n1 | xargs -n1 basename)
+            popd >/dev/null
+            rm -rf "$TMP_DIR"
+
+            echo "✅ Detected latest kernel version: $KERNEL"
+            echo "KERNEL_VERSION=$KERNEL" >> $GITHUB_OUTPUT
           fi
           
           echo -e "\n## 4. Processing Slurm Configuration & Verifying DEBs ##"
