@@ -142,19 +142,20 @@ jobs:
             GENERIC_VERSION=$(apt-cache policy linux-image-generic | grep Candidate | awk '{print $2}')
             [ -z "$GENERIC_VERSION" ] && { echo "❌ ERROR: Could not find version of linux-image-generic."; exit 1; }
 
-            # This will list the kernel version installed by linux-image-generic
-            TMP_DIR=$(mktemp -d)
-            pushd "$TMP_DIR" >/dev/null
-            apt-get download "linux-image-generic=$GENERIC_VERSION"
-            dpkg-deb -x *.deb .
-            KERNEL=$(find ./lib/modules -maxdepth 1 -mindepth 1 -type d | head -n1 | xargs -n1 basename)
-            popd >/dev/null
-            rm -rf "$TMP_DIR"
+            # Extract real kernel version from available modules (after a dry-run install)
+            KERNEL_PKG=$(apt-cache show "linux-image-generic=$GENERIC_VERSION" | grep -E '^Depends:' | sed 's/.*linux-image-\([^ ]*\).*/\1/')
+            [ -z "$KERNEL_PKG" ] && { echo "❌ ERROR: Could not parse real kernel package name."; exit 1; }
 
-            echo "✅ Detected latest kernel version: $KERNEL"
-            echo "KERNEL_VERSION=$KERNEL" >> $GITHUB_OUTPUT
+            KERNEL="linux-image-$KERNEL_PKG"
+            echo "✅ Detected kernel package: $KERNEL"
+
+            # Optionally verify it exists
+            apt-cache policy "$KERNEL" | grep -q "Candidate:" || { echo "❌ ERROR: Kernel package '$KERNEL' not found."; exit 1; }
+
+            echo "✅ Detected latest kernel version: $KERNEL_PKG"
+            echo "KERNEL_VERSION=$KERNEL_PKG" >> $GITHUB_OUTPUT
           fi
-          
+
           echo -e "\n## 4. Processing Slurm Configuration & Verifying DEBs ##"
           SLURM_VERSION_OVERRIDE="0"
           if [ -n "$INPUT_SLURM_VERSION" ] && [ "$INPUT_SLURM_VERSION" != "0" ]; then SLURM_VERSION_OVERRIDE="$INPUT_SLURM_VERSION";
