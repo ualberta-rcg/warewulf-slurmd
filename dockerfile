@@ -1,55 +1,88 @@
 FROM ubuntu:24.04
 
+# Set noninteractive frontend
 ENV DEBIAN_FRONTEND=noninteractive
+
+# Define build arguments from GitHub Actions workflow
+ARG SLURM_VERSION
+ARG KERNEL_VERSION
+ARG DISABLE_AUTOLOGIN
+ARG NVIDIA_INSTALL_ENABLED
+ARG NVIDIA_DRIVER_URL
+ARG FIRSTBOOT_ENABLED
 
 # --- 0. Set root user ---
 USER root
 
-
-
-FROM ubuntu:24.04
-
-# Set Environment Variables
-ENV PATH=/usr/local/ssl/bin:$PREFIX/bin:/opt/software/slurm/sbin:${PATH:-}
-ENV LD_LIBRARY_PATH=/usr/local/ssl/lib:${LD_LIBRARY_PATH:-}
-ENV DEBIAN_FRONTEND=noninteractive
-ENV NVIDIA_VISIBLE_DEVICES=all
-ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility
-ENV KERNEL_VERSION=6.8.0-59-generic
-#ENV NVIDIA_DRIVER_VERSION=570.133.07
-ENV NVIDIA_DRIVER_VERSION=570.133.20
-
-# Temporarily disable service configuration
-RUN echo '#!/bin/sh\nexit 101' > /usr/sbin/policy-rc.d && chmod +x /usr/sbin/policy-rc.d
-
-# Install System Dependencies and Upgrade
+# --- 1. Install Core Tools, Debugging, and Dependencies ---
 RUN apt-get update && apt-get install -y \
-    # Core Utilities
-    wget \
-    curl \
-    unzip \
-    locales \
-    ansible \
-    net-tools \
+    sudo \
     openssh-server \
     openssh-client \
+    net-tools \
     iproute2 \
-    initramfs-tools \
+    pciutils \
+    lvm2 \
+    nfs-common \
+    multipath-tools \
+    ifupdown \
+    rsync \
+    curl \
+    wget \
+    vim \
+    tmux \
+    less \
+    htop \
+    sysstat \
+    cron \
+    ipmitool \
+    smartmontools \
+    lm-sensors \
+    python3 \
+    python3-pip \
+    netplan.io \
+    unzip \
     gnupg \
-    procps \
-    util-linux \
-    lsb-release \
-    ca-certificates \
-    tzdata \
+    ansible \
     systemd \
+    systemd-sysv \
+    dbus \
+    initramfs-tools \
+    openscap-scanner \
+    libopenscap25t64 \
+    openscap-common \
+    socat \
+    conntrack \
+    ebtables \
+    ethtool \
+    ipset \
+    iptables \
+    chrony \
+    tcpdump \
+    strace \
+    lsof \
+    jq \
+    git \
+    iputils-ping \
+    lsb-release \
+    bash-completion \
+    open-iscsi \
+    bpfcc-tools \
+    cgroup-tools \
+    auditd \
+    apt-transport-https \
+    software-properties-common \
+    gnupg-agent \
+    ignition \
+    gdisk \
+    rsyslog \
+    logrotate \
+    systemd-journal-remote \
+    ca-certificates \
     openmpi-bin \
     kmod \
     numactl \
-    sysstat \
     apt-utils \
-    systemd-sysv \
-    dbus \
-    pciutils \
     netbase \
     cmake \
     libhwloc15 \
@@ -73,141 +106,63 @@ RUN apt-get update && apt-get install -y \
     gettext \
     autoconf \
     automake \
-    sudo \
     gcc \
     make \
     libmunge2 \
     libpmix-bin \
     rrdtool \
     lua5.3 \
-    dkms \
-    # Used by warewulf to partition disks (cvmfs cache, localscratch) \
-    ignition \
-    # Used by warewulf to parititon disks \
-    gdisk \
-    # To mount home directories from storage \
-    nfs-common \
-    # Build dependencies for NVIDIA driver. Keep these here. \
-    linux-image-${KERNEL_VERSION} \
-    linux-headers-${KERNEL_VERSION} \
-    linux-modules-${KERNEL_VERSION} \
-    linux-modules-extra-${KERNEL_VERSION} \
-    build-essential \
-    pkg-config \
-    xorg-dev \
-    libx11-dev \
-    libxext-dev \
-    libglvnd-dev && \
-    ln -s /usr/src/linux-headers-${KERNEL_VERSION} /lib/modules/${KERNEL_VERSION}/build
+    dkms && \
+    apt-get clean && \
+    mkdir -p /var/log/journal && \
+    systemd-tmpfiles --create --prefix /var/log/journal && \
+    rm -rf /var/lib/apt/lists/*
 
-# Create build directory
-# Download the NVIDIA driver
-# Old Line: https://us.download.nvidia.com/XFree86/Linux-x86_64/${NVIDIA_DRIVER_VERSION}/NVIDIA-Linux-x86_64-${NVIDIA_DRIVER_VERSION}.run -O /tmp/NVIDIA.run && \
-RUN mkdir /slurm-debs && mkdir -p /build && cd /build && \
-    echo "📥 Downloading NVIDIA driver ${NVIDIA_DRIVER_VERSION}..." && \
-    wget -q https://us.download.nvidia.com/tesla/${NVIDIA_DRIVER_VERSION}/NVIDIA-Linux-x86_64-${NVIDIA_DRIVER_VERSION}.run -O /tmp/NVIDIA.run && \
-    echo "📦 Extracting driver..." && \
-    chmod +x /tmp/NVIDIA.run && \
-    /tmp/NVIDIA.run --extract-only --target /build/nvidia && \
-    cd /build/nvidia
+# Install specific kernel if provided, otherwise use generic
+RUN if [ "$KERNEL_VERSION" != "latest" ]; then \
+        apt-get update && apt-get install -y \
+            linux-image-${KERNEL_VERSION} \
+            linux-headers-${KERNEL_VERSION} \
+            linux-modules-${KERNEL_VERSION} \
+            linux-modules-extra-${KERNEL_VERSION} && \
+        ln -s /usr/src/linux-headers-${KERNEL_VERSION} /lib/modules/${KERNEL_VERSION}/build && \
+        apt-get clean && rm -rf /var/lib/apt/lists/*; \
+    else \
+        apt-get update && apt-get install -y \
+            linux-image-generic \
+            linux-headers-generic && \
+        apt-get clean && rm -rf /var/lib/apt/lists/*; \
+    fi
 
-# Create fake systemctl for environments without systemd
+# --- 2. Set root and user accounts ---
+RUN echo "root:changeme" | chpasswd && \
+    groupadd -r -g 990 slurm && \
+    useradd -r -u 990 -g slurm -s /bin/false slurm && \
+    groupadd -g 991 wwgroup && \
+    useradd -m -u 991 -d /local/home/wwuser -g wwgroup -s /bin/bash wwuser && \
+    echo "wwuser:wwpassword" | chpasswd && \
+    usermod -aG sudo wwuser
+
+# --- 3. Temporarily disable service configuration ---
+RUN echo '#!/bin/sh\nexit 101' > /usr/sbin/policy-rc.d && chmod +x /usr/sbin/policy-rc.d
+
+# --- 4. Create fake systemctl for environments without systemd ---
 RUN mkdir -p /tmp/bin && \
     cp /usr/bin/systemctl /usr/bin/systemctl.bak && \
     echo '#!/bin/sh\nexit 0' > /tmp/bin/systemctl && \
     chmod +x /tmp/bin/systemctl && \
     ln -sf /tmp/bin/systemctl /usr/bin/systemctl
 
-# Full installation with kernel modules
-RUN cd /build/nvidia && chmod +x /tmp/bin/systemctl && \
-    export PATH="/tmp/bin:$PATH" && \
-    ./nvidia-installer --accept-license \
-                       --no-questions \
-                       --silent \
-                       --no-backup \
-                       --no-x-check \
-                       --no-nouveau-check \
-                       --no-systemd \
-                       --no-check-for-alternate-installs \
-                       --kernel-name=${KERNEL_VERSION} \
-                       --kernel-source-path=/lib/modules/${KERNEL_VERSION}/build \
-                       --x-prefix=/usr \
-                       --x-module-path=/usr/lib/xorg/modules \
-                       --x-library-path=/usr/lib 
+# --- 5. Install Helm ---
+RUN curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/master/scripts/get-helm-3 && \
+    chmod 700 get_helm.sh && \
+    ./get_helm.sh && \
+    rm -f get_helm.sh
 
-# Create module configuration to load at boot
-# Setup CUDA-specific UVM device nodes
-RUN mkdir -p /etc/modules-load.d/ && \
-    echo "nvidia" > /etc/modules-load.d/nvidia.conf && \
-    echo "nvidia_uvm" >> /etc/modules-load.d/nvidia.conf && \
-    echo "nvidia_drm" >> /etc/modules-load.d/nvidia.conf && \
-    echo "nvidia_modeset" >> /etc/modules-load.d/nvidia.conf
-
-# Create NVIDIA device nodes (if they don't exist)
-RUN mkdir -p /dev/nvidia && \
-    [ -e /dev/nvidia0 ] || mknod -m 666 /dev/nvidia0 c 195 0 && \
-    [ -e /dev/nvidiactl ] || mknod -m 666 /dev/nvidiactl c 195 255 && \
-    [ -e /dev/nvidia-uvm ] || mknod -m 666 /dev/nvidia-uvm c 243 0 && \
-    [ -e /dev/nvidia-uvm-tools ] || mknod -m 666 /dev/nvidia-uvm-tools c 243 1
-
-# Remove fake systemctl after use
-RUN rm -f /usr/bin/systemctl && \
-    rm -rf /tmp/bin && \
-    cp /usr/bin/systemctl.bak /usr/bin/systemctl
-    
-# Optional: Persist the kernel modules into the initramfs
-RUN update-initramfs -u -k ${KERNEL_VERSION}
-
-# Copy Slurm Deb files into the container
-COPY *.deb /slurm-debs/
-
-RUN chmod +x /usr/local/sbin/firstboot.sh && \
-    mkdir -p /etc/systemd/system/multi-user.target.wants && \
-    ln -s /etc/systemd/system/firstboot.service /etc/systemd/system/multi-user.target.wants/firstboot.service || true
-
-# Enable root autologin on tty1
-RUN mkdir -p /etc/systemd/system/getty@tty1.service.d && \
-    echo '[Service]' > /etc/systemd/system/getty@tty1.service.d/override.conf && \
-    echo 'ExecStart=' >> /etc/systemd/system/getty@tty1.service.d/override.conf && \
-    echo 'ExecStart=-/sbin/agetty --autologin root --noclear %I $TERM' >> /etc/systemd/system/getty@tty1.service.d/override.conf
-
-# Clean Up
-RUN apt-get purge -y \
-    build-essential \
-    cmake \
-    libtool \
-    zlib1g-dev \
-    liblua5.3-0 \
-    pkg-config \
-    xorg-dev \
-    libx11-dev \
-    libxext-dev \
-    libglvnd-dev \
-    gcc \
-    make \
-    autoconf \
-    automake 
-    
-RUN apt-get autoremove -y && \
-    apt-get clean && \
-    apt-get install -y openscap-scanner netplan.io && \
-    rm -rf /usr/src/* /var/lib/apt/lists/* /tmp/* \
-           /var/tmp/* /var/log/* /usr/share/doc /usr/share/man \
-           /usr/share/locale /usr/share/info && \
-    rm /usr/sbin/policy-rc.d && \
-    mkdir -p /local/home && \
-    groupadd -r slurm && \
-    useradd -r -g slurm -s /bin/false slurm && \
-    groupadd wwgroup && \
-    useradd -m -d /local/home/wwuser -g slurm -s /bin/bash wwuser && \
-    echo "wwuser:wwpassword" | chpasswd && \
-    usermod -aG sudo wwuser
-
-# Fetch the latest SCAP Security Guide
+# --- 6. Fetch and Apply SCAP Security Guide Remediation ---
 RUN export SSG_VERSION=$(curl -s https://api.github.com/repos/ComplianceAsCode/content/releases/latest | grep -oP '"tag_name": "\K[^"]+' || echo "0.1.66") && \
     echo "🔄 Using SCAP Security Guide version: $SSG_VERSION" && \
     SSG_VERSION_NO_V=$(echo "$SSG_VERSION" | sed 's/^v//') && \
-    echo "🔄 Stripped Version: $SSG_VERSION_NO_V" && \
     wget -O /ssg.zip "https://github.com/ComplianceAsCode/content/releases/download/${SSG_VERSION}/scap-security-guide-${SSG_VERSION_NO_V}.zip" && \
     mkdir -p /usr/share/xml/scap/ssg/content && \
     if [ -f "/ssg.zip" ]; then \
@@ -215,14 +170,162 @@ RUN export SSG_VERSION=$(curl -s https://api.github.com/repos/ComplianceAsCode/c
         rm -f /ssg.zip; \
     else \
         echo "❌ Failed to download SCAP Security Guide"; exit 1; \
+    fi && \
+    SCAP_GUIDE=$(find /usr/share/xml/scap/ssg/content -name "ssg-ubuntu*-ds.xml" | sort | tail -n1) && \
+    echo "📘 Found SCAP guide: $SCAP_GUIDE" && \
+    oscap xccdf eval \
+        --remediate \
+        --profile xccdf_org.ssgproject.content_profile_cis_level2_server \
+        --results /root/oscap-results.xml \
+        --report /root/oscap-report.html \
+        "$SCAP_GUIDE" || true
+
+# --- 7. Clean up SCAP content and scanner ---
+RUN rm -rf /usr/share/xml/scap/ssg/content && \
+    apt-get remove -y openscap-scanner libopenscap25t64 && \
+    apt-get autoremove -y && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+# --- 8. Install RKE2 (server mode) ---
+RUN curl -sfL https://get.rke2.io | sh - && \
+    mkdir -p /etc/systemd/system && \
+    mkdir -p /etc/rancher/rke2/ && \
+    cp /usr/local/lib/systemd/system/rke2-server.service /etc/systemd/system/ && \
+    ln -s /etc/systemd/system/rke2-server.service /etc/systemd/system/multi-user.target.wants/rke2-server.service && \
+    mkdir -p /var/log/audit && \
+    export PATH="/var/lib/rancher/rke2/bin:${PATH}"
+
+# --- 9. Install NVIDIA Driver if enabled ---
+RUN if [ "$NVIDIA_INSTALL_ENABLED" = "true" ]; then \
+        apt-get update && apt-get install -y \
+            build-essential \
+            pkg-config \
+            xorg-dev \
+            libx11-dev \
+            libxext-dev \
+            libglvnd-dev && \
+        mkdir -p /build && cd /build && \
+        echo "📥 Downloading NVIDIA driver from ${NVIDIA_DRIVER_URL}..." && \
+        wget -q "${NVIDIA_DRIVER_URL}" -O /tmp/NVIDIA.run && \
+        echo "📦 Extracting driver..." && \
+        chmod +x /tmp/NVIDIA.run && \
+        /tmp/NVIDIA.run --extract-only --target /build/nvidia && \
+        cd /build/nvidia && \
+        ./nvidia-installer --accept-license \
+                          --no-questions \
+                          --silent \
+                          --no-backup \
+                          --no-x-check \
+                          --no-nouveau-check \
+                          --no-systemd \
+                          --no-check-for-alternate-installs \
+                          --kernel-name=${KERNEL_VERSION} \
+                          --kernel-source-path=/lib/modules/${KERNEL_VERSION}/build \
+                          --x-prefix=/usr \
+                          --x-module-path=/usr/lib/xorg/modules \
+                          --x-library-path=/usr/lib && \
+        mkdir -p /etc/modules-load.d/ && \
+        echo "nvidia" > /etc/modules-load.d/nvidia.conf && \
+        echo "nvidia_uvm" >> /etc/modules-load.d/nvidia.conf && \
+        echo "nvidia_drm" >> /etc/modules-load.d/nvidia.conf && \
+        echo "nvidia_modeset" >> /etc/modules-load.d/nvidia.conf && \
+        mkdir -p /dev/nvidia && \
+        [ -e /dev/nvidia0 ] || mknod -m 666 /dev/nvidia0 c 195 0 && \
+        [ -e /dev/nvidiactl ] || mknod -m 666 /dev/nvidiactl c 195 255 && \
+        [ -e /dev/nvidia-uvm ] || mknod -m 666 /dev/nvidia-uvm c 243 0 && \
+        [ -e /dev/nvidia-uvm-tools ] || mknod -m 666 /dev/nvidia-uvm-tools c 243 1 && \
+        mkdir -p /nvidia-debs && \
+        wget -O /nvidia-debs/datacenter-gpu-manager_3.3.9_amd64.deb \
+            https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/datacenter-gpu-manager_3.3.9_amd64.deb && \
+        apt-get install -y /nvidia-debs/datacenter-gpu-manager_3.3.9_amd64.deb && \
+        rm -rf /nvidia-debs && \
+        apt-get purge -y \
+            build-essential \
+            pkg-config \
+            xorg-dev \
+            libx11-dev \
+            libxext-dev \
+            libglvnd-dev && \
+        apt-get autoremove -y && \
+        apt-get clean && \
+        rm -rf /var/lib/apt/lists/* /tmp/* /build; \
     fi
 
-# Add OpenSCAP Scripts
-COPY openscap_scan.sh /openscap_scan.sh
-COPY openscap_remediate.sh /openscap_remediate.sh
+# --- 10. Install Slurm ---
+COPY slurm-debs/*.deb /slurm-debs/
+RUN mkdir -p /slurm-debs && \
+    if [ "$SLURM_VERSION" != "0" ]; then \
+        apt-get update && \
+        debver=$(echo "$SLURM_VERSION" | sed 's/^\([0-9]*\)-\([0-9]*\)-\([0-9]*\)-\([0-9]*\)$/\1.\2.\3-\4/') && \
+        apt-get install -y /slurm-debs/*_${debver}_*.deb && \
+        apt-get clean && rm -rf /var/lib/apt/lists/*; \
+    fi
 
-# Make scripts executable
-RUN chmod +x /openscap_scan.sh /openscap_remediate.sh \
-    && rm -rf /NVIDIA-Linux* \
-    && rm -rf /usr/src/* \
-    && mkdir -p /etc/redfish_exporter/
+
+# --- 11. Configure Autologin based on DISABLE_AUTOLOGIN ---
+RUN if [ "$DISABLE_AUTOLOGIN" != "true" ]; then \
+        mkdir -p /etc/systemd/system/getty@tty1.service.d && \
+        echo '[Service]' > /etc/systemd/system/getty@tty1.service.d/override.conf && \
+        echo 'ExecStart=' >> /etc/systemd/system/getty@tty1.service.d/override.conf && \
+        echo 'ExecStart=-/sbin/agetty --autologin root --noclear %I $TERM' >> /etc/systemd/system/getty@tty1.service.d/override.conf; \
+    else \
+        rm -rf /etc/systemd/system/getty@tty1.service.d; \
+    fi
+
+# --- 12. Configure Firstboot Service ---
+COPY firstboot.service /etc/systemd/system/
+COPY firstboot.sh /usr/local/sbin/
+RUN chmod +x /usr/local/sbin/firstboot.sh && \
+    mkdir -p /etc/systemd/system/multi-user.target.wants && \
+    if [ "$FIRSTBOOT_ENABLED" = "true" ]; then \
+        ln -s /etc/systemd/system/firstboot.service /etc/systemd/system/multi-user.target.wants/firstboot.service || true; \
+    else \
+        rm -f /etc/systemd/system/multi-user.target.wants/firstboot.service; \
+    fi
+
+# --- 13. Generate Initramfs for Selected Kernel ---
+RUN if [ -n "$KERNEL_VERSION" ] && [ "$KERNEL_VERSION" != "latest" ]; then \
+        update-initramfs -u -k "$KERNEL_VERSION"; \
+    else \
+        update-initramfs -u; \
+    fi
+	
+# --- 14. Final Cleanup ---
+RUN apt-get purge -y \
+        cmake \
+        libtool \
+        zlib1g-dev \
+        liblua5.3-0 \
+        gcc \
+        make \
+        autoconf \
+        automake \
+        bpfcc-tools \
+        pkg-config \
+        build-essential && \
+    apt-get autoremove -y && \
+    apt-get clean && \
+    rm -rf \
+        /usr/src/* \
+        /var/lib/apt/lists/* \
+        /tmp/* \
+        /var/tmp/* \
+        /var/log/* \
+        /var/log/apt/* \
+        /usr/share/doc \
+        /usr/share/man \
+        /usr/share/locale \
+        /usr/share/locale-langpack \
+        /usr/share/info \
+        /usr/sbin/policy-rc.d \
+        /NVIDIA-Linux* \
+        /root/.cache \
+        /root/.wget-hsts && \
+    find / -name '*.bash_history' -delete && \
+    find / -name '.wget-hsts' -delete && \
+    find / -name '.cache' -exec rm -rf {} +
+
+# --- 14. Systemd-compatible boot (Warewulf) ---
+STOPSIGNAL SIGRTMIN+3
+CMD ["/sbin/init"]
