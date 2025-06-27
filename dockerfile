@@ -136,10 +136,10 @@ RUN if [ "$KERNEL_VERSION" != "latest" ]; then \
 
 # --- 2. Set root and user accounts ---
 RUN echo "root:changeme" | chpasswd && \
-    groupadd -r -g 990 slurm && \
-    useradd -r -u 990 -g slurm -s /bin/false slurm && \
-    groupadd -g 991 wwgroup && \
-    useradd -m -u 991 -d /local/home/wwuser -g wwgroup -s /bin/bash wwuser && \
+    groupadd -r -g 999 slurm && \
+    useradd -r -u 999 -g slurm -s /bin/false slurm && \
+    groupadd -g 998 wwgroup && \
+    useradd -m -u 998 -d /local/home/wwuser -g wwgroup -s /bin/bash wwuser && \
     echo "wwuser:wwpassword" | chpasswd && \
     usermod -aG sudo wwuser
 
@@ -153,13 +153,7 @@ RUN mkdir -p /tmp/bin && \
     chmod +x /tmp/bin/systemctl && \
     ln -sf /tmp/bin/systemctl /usr/bin/systemctl
 
-# --- 5. Install Helm ---
-RUN curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/master/scripts/get-helm-3 && \
-    chmod 700 get_helm.sh && \
-    ./get_helm.sh && \
-    rm -f get_helm.sh
-
-# --- 6. Fetch and Apply SCAP Security Guide Remediation ---
+# --- 5. Fetch and Apply SCAP Security Guide Remediation ---
 RUN export SSG_VERSION=$(curl -s https://api.github.com/repos/ComplianceAsCode/content/releases/latest | grep -oP '"tag_name": "\K[^"]+' || echo "0.1.66") && \
     echo "🔄 Using SCAP Security Guide version: $SSG_VERSION" && \
     SSG_VERSION_NO_V=$(echo "$SSG_VERSION" | sed 's/^v//') && \
@@ -180,14 +174,14 @@ RUN export SSG_VERSION=$(curl -s https://api.github.com/repos/ComplianceAsCode/c
         --report /root/oscap-report.html \
         "$SCAP_GUIDE" || true
 
-# --- 7. Clean up SCAP content and scanner ---
+# --- 6. Clean up SCAP content and scanner ---
 RUN rm -rf /usr/share/xml/scap/ssg/content && \
     apt-get remove -y openscap-scanner libopenscap25t64 && \
     apt-get autoremove -y && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-# --- 8. Install RKE2 (server mode) ---
+# --- 7. Install RKE2 (server mode) ---
 RUN curl -sfL https://get.rke2.io | sh - && \
     mkdir -p /etc/systemd/system && \
     mkdir -p /etc/rancher/rke2/ && \
@@ -196,7 +190,7 @@ RUN curl -sfL https://get.rke2.io | sh - && \
     mkdir -p /var/log/audit && \
     export PATH="/var/lib/rancher/rke2/bin:${PATH}"
 
-# --- 9. Install NVIDIA Driver if enabled ---
+# --- 8. Install NVIDIA Driver if enabled ---
 RUN if [ "$NVIDIA_INSTALL_ENABLED" = "true" ]; then \
         apt-get update && apt-get install -y \
             build-essential \
@@ -252,7 +246,7 @@ RUN if [ "$NVIDIA_INSTALL_ENABLED" = "true" ]; then \
         rm -rf /var/lib/apt/lists/* /tmp/* /build; \
     fi
 
-# --- 10. Install Slurm ---
+# ---  9. Install Slurm ---
 COPY slurm-debs/*.deb /slurm-debs/
 RUN mkdir -p /slurm-debs && \
     if [ "$SLURM_VERSION" != "0" ]; then \
@@ -263,7 +257,7 @@ RUN mkdir -p /slurm-debs && \
     fi
 
 
-# --- 11. Configure Autologin based on DISABLE_AUTOLOGIN ---
+# --- 10. Configure Autologin based on DISABLE_AUTOLOGIN ---
 RUN if [ "$DISABLE_AUTOLOGIN" != "true" ]; then \
         mkdir -p /etc/systemd/system/getty@tty1.service.d && \
         echo '[Service]' > /etc/systemd/system/getty@tty1.service.d/override.conf && \
@@ -273,7 +267,7 @@ RUN if [ "$DISABLE_AUTOLOGIN" != "true" ]; then \
         rm -rf /etc/systemd/system/getty@tty1.service.d; \
     fi
 
-# --- 12. Configure Firstboot Service ---
+# --- 11. Configure Firstboot Service ---
 COPY firstboot.service /etc/systemd/system/
 COPY firstboot.sh /usr/local/sbin/
 RUN chmod +x /usr/local/sbin/firstboot.sh && \
@@ -284,14 +278,14 @@ RUN chmod +x /usr/local/sbin/firstboot.sh && \
         rm -f /etc/systemd/system/multi-user.target.wants/firstboot.service; \
     fi
 
-# --- 13. Generate Initramfs for Selected Kernel ---
+# --- 12. Generate Initramfs for Selected Kernel ---
 RUN if [ -n "$KERNEL_VERSION" ] && [ "$KERNEL_VERSION" != "latest" ]; then \
         update-initramfs -u -k "$KERNEL_VERSION"; \
     else \
         update-initramfs -u; \
     fi
 	
-# --- 14. Final Cleanup ---
+# --- 13. Final Cleanup ---
 RUN rm -f /usr/bin/systemctl && \
     rm -rf /tmp/bin && \
     [ -f /usr/bin/systemctl.bak ] && mv /usr/bin/systemctl.bak /usr/bin/systemctl || true && \
