@@ -301,10 +301,16 @@ RUN rm -f /usr/bin/systemctl && \
         automake \
         bpfcc-tools \
         pkg-config \
-        build-essential && \
+        build-essential \
+        gettext \
+        xorg-dev \
+        libx11-dev \
+        libxext-dev \
+        libglvnd-dev && \
     apt-get autoremove -y && \
     apt-get clean && \
     rm -rf \
+        /slurm-debs \
         /usr/src/* \
         /var/lib/apt/lists/* \
         /tmp/* \
