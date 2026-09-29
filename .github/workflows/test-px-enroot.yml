@@ -49,8 +49,8 @@ jobs:
             REF="${{ github.event.inputs.PYXIS_REF }}"
             echo "✅ Using manual pyxis ref: $REF"
           else
-            REF=$(curl -s https://api.github.com/repos/NVIDIA/pyxis/tags \
-              | jq -r '.[].name' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n1)
+            REF=$(git ls-remote --tags https://github.com/NVIDIA/pyxis 'v*' \
+              | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n1)
             [ -z "$REF" ] && { echo "❌ Could not determine latest pyxis tag."; exit 1; }
             echo "🔬 Detected latest pyxis release: $REF"
           fi
@@ -119,11 +119,18 @@ jobs:
           if [ -n "${{ github.event.inputs.ENROOT_VERSION }}" ]; then
             TAG="${{ github.event.inputs.ENROOT_VERSION }}"
           else
-            TAG=$(curl -s https://api.github.com/repos/NVIDIA/enroot/releases/latest | jq -r '.tag_name')
+            # redirect carries the tag — plain web endpoint, no API rate limits
+            TAG=$(curl -sI https://github.com/NVIDIA/enroot/releases/latest \
+              | grep -i '^location:' | sed -E 's|.*tag/(v[0-9.]+).*|\1|')
           fi
-          [ -z "$TAG" ] || [ "$TAG" = "null" ] && { echo "::error::Could not resolve enroot release"; exit 1; }
-          URL=$(curl -s "https://api.github.com/repos/NVIDIA/enroot/releases/tags/$TAG" \
-            | jq -r '.assets[] | select(.name | test("^enroot_[0-9].*_amd64\\.deb$")) | .browser_download_url' | head -n1)
+          [ -z "$TAG" ] && { echo "::error::Could not resolve enroot release"; exit 1; }
+          VER=${TAG#v}
+          URL="https://github.com/NVIDIA/enroot/releases/download/$TAG/enroot_${VER}-1_amd64.deb"
+          if ! curl -sIL -o /dev/null "$URL"; then
+            echo "predicted asset name missed; falling back to API"
+            URL=$(curl -s "https://api.github.com/repos/NVIDIA/enroot/releases/tags/$TAG" \
+              | jq -r '.assets[] | select(.name | test("^enroot_[0-9].*_amd64\\.deb$")) | .browser_download_url' | head -n1)
+          fi
           [ -z "$URL" ] || [ "$URL" = "null" ] && { echo "::error::No enroot amd64.deb asset for $TAG"; exit 1; }
           echo "tag=$TAG" >> $GITHUB_OUTPUT
           echo "url=$URL" >> $GITHUB_OUTPUT
@@ -154,11 +161,14 @@ jobs:
         run: |
           set -e
           REF="${{ github.event.inputs.PYXIS_REF }}"
-          [ -z "$REF" ] && REF=$(curl -s https://api.github.com/repos/NVIDIA/pyxis/tags \
-            | jq -r '.[].name' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n1)
+          [ -z "$REF" ] && REF=$(git ls-remote --tags https://github.com/NVIDIA/pyxis 'v*' \
+            | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n1)
           TAG="${{ github.event.inputs.ENROOT_VERSION }}"
-          [ -z "$TAG" ] && TAG=$(curl -s https://api.github.com/repos/NVIDIA/enroot/releases/latest | jq -r '.tag_name')
-          URL=$(curl -s "https://api.github.com/repos/NVIDIA/enroot/releases/tags/$TAG" \
+          [ -z "$TAG" ] && TAG=$(curl -sI https://github.com/NVIDIA/enroot/releases/latest \
+            | grep -i '^location:' | sed -E 's|.*tag/(v[0-9.]+).*|\1|')
+          VER=${TAG#v}
+          URL="https://github.com/NVIDIA/enroot/releases/download/$TAG/enroot_${VER}-1_amd64.deb"
+          curl -sIL -o /dev/null "$URL" || URL=$(curl -s "https://api.github.com/repos/NVIDIA/enroot/releases/tags/$TAG" \
             | jq -r '.assets[] | select(.name | test("^enroot_[0-9].*_amd64\\.deb$")) | .browser_download_url' | head -n1)
           { [ -z "$REF" ] || [ -z "$URL" ] || [ "$URL" = "null" ]; } && { echo "::error::version resolution failed"; exit 1; }
           echo "pyxisref=$REF" >> $GITHUB_OUTPUT

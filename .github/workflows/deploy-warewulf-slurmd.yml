@@ -267,8 +267,9 @@ jobs:
               PYXIS_REF_RESOLVED="$INPUT_PYXIS_REF"
               echo "🎯 Using manual pyxis ref: $PYXIS_REF_RESOLVED"
             else
-              PYXIS_REF_RESOLVED=$(curl -s https://api.github.com/repos/NVIDIA/pyxis/tags \
-                | jq -r '.[].name' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n1)
+              # git smart-HTTP: no API rate limits
+              PYXIS_REF_RESOLVED=$(git ls-remote --tags https://github.com/NVIDIA/pyxis 'v*' \
+                | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n1)
               [ -z "$PYXIS_REF_RESOLVED" ] && { echo "❌ ERROR: Could not determine latest pyxis tag."; exit 1; }
               echo "🔬 Detected latest pyxis release: $PYXIS_REF_RESOLVED"
             fi
@@ -276,12 +277,19 @@ jobs:
               ENROOT_TAG="$INPUT_ENROOT_VERSION"
               echo "🎯 Using manual enroot release: $ENROOT_TAG"
             else
-              ENROOT_TAG=$(curl -s https://api.github.com/repos/NVIDIA/enroot/releases/latest | jq -r '.tag_name')
-              [ -z "$ENROOT_TAG" ] || [ "$ENROOT_TAG" = "null" ] && { echo "❌ ERROR: Could not determine latest enroot release."; exit 1; }
+              # redirect carries the tag — plain web endpoint, no API rate limits
+              ENROOT_TAG=$(curl -sI https://github.com/NVIDIA/enroot/releases/latest \
+                | grep -i '^location:' | sed -E 's|.*tag/(v[0-9.]+).*|\1|')
+              [ -z "$ENROOT_TAG" ] && { echo "❌ ERROR: Could not determine latest enroot release."; exit 1; }
               echo "🔬 Detected latest enroot release: $ENROOT_TAG"
             fi
-            ENROOT_URL=$(curl -s "https://api.github.com/repos/NVIDIA/enroot/releases/tags/$ENROOT_TAG" \
-              | jq -r '.assets[] | select(.name | test("^enroot_[0-9].*_amd64\\.deb$")) | .browser_download_url' | head -n1)
+            ENROOT_VER=${ENROOT_TAG#v}
+            ENROOT_URL="https://github.com/NVIDIA/enroot/releases/download/$ENROOT_TAG/enroot_${ENROOT_VER}-1_amd64.deb"
+            if ! curl -sIL -o /dev/null "$ENROOT_URL"; then
+              echo "⚠️ Predicted asset name missed; falling back to API."
+              ENROOT_URL=$(curl -s "https://api.github.com/repos/NVIDIA/enroot/releases/tags/$ENROOT_TAG" \
+                | jq -r '.assets[] | select(.name | test("^enroot_[0-9].*_amd64\\.deb$")) | .browser_download_url' | head -n1)
+            fi
             [ -z "$ENROOT_URL" ] || [ "$ENROOT_URL" = "null" ] && { echo "❌ ERROR: Could not find enroot amd64.deb asset for $ENROOT_TAG."; exit 1; }
             echo "✅ Enroot asset: $ENROOT_URL"
           else
