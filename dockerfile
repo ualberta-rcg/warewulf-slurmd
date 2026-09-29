@@ -188,6 +188,9 @@ RUN rm -rf /usr/share/xml/scap/ssg/content && \
     apt-get autoremove -y 
 
 # --- 8. Install NVIDIA Driver if enabled (requires kernel installation) ---
+# proprietary: required for pre-Turing GPUs (Pascal GTX1080 = this fleet);
+# open kernel modules support Turing+ only.
+ARG NVIDIA_MODULE_TYPE="proprietary"
 RUN if [ "$NVIDIA_INSTALL_ENABLED" = "true" ] && [ "$KERNEL_INSTALL_ENABLED" = "true" ]; then \
         apt-get update && apt-get install -y \
             build-essential \
@@ -211,7 +214,7 @@ RUN if [ "$NVIDIA_INSTALL_ENABLED" = "true" ] && [ "$KERNEL_INSTALL_ENABLED" = "
                           --no-nouveau-check \
                           --no-systemd \
                           --no-check-for-alternate-installs \
-                          --kernel-module-type=open \
+                          --kernel-module-type=${NVIDIA_MODULE_TYPE} \
                           --kernel-name=${KERNEL_VERSION} \
                           --kernel-source-path=/lib/modules/${KERNEL_VERSION}/build \
                           --x-prefix=/usr \
