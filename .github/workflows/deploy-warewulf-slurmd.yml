@@ -236,7 +236,9 @@ jobs:
             # Pascal-supporting branch 580.x when latest drops the arch)
             if [ "$NVIDIA_VERSION_OVERRIDE" = "0" ]; then
               case "$GITHUB_REF" in
-                refs/tags/px-nv-*) NVIDIA_VERSION_OVERRIDE="${GITHUB_REF#refs/tags/px-nv-}"; echo "🎯 NVIDIA version from tag: $NVIDIA_VERSION_OVERRIDE";;
+                refs/tags/px-nv-*) NVIDIA_VERSION_OVERRIDE="${GITHUB_REF#refs/tags/px-nv-}"
+                  NVIDIA_VERSION_OVERRIDE="${NVIDIA_VERSION_OVERRIDE%%-*}"   # trim tag suffix (e.g. -2)
+                  echo "🎯 NVIDIA version from tag: $NVIDIA_VERSION_OVERRIDE";;
               esac
             fi
             ARCH="x86_64"
