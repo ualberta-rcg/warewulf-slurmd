@@ -70,10 +70,11 @@ jobs:
             | sort -V | tail -n1)
           [ -z "$DEB_VERSION" ] && { echo "::error::No u2404 DEBs found"; exit 1; }
           echo "Testing against Slurm $DEB_VERSION"
-          dpkg -i slurm-debs/slurm-smd_${DEB_VERSION}_amd64_u2404.deb \
+          sudo apt-get update -qq
+          sudo dpkg -i slurm-debs/slurm-smd_${DEB_VERSION}_amd64_u2404.deb \
                   slurm-debs/slurm-smd-client_${DEB_VERSION}_amd64_u2404.deb \
                   slurm-debs/slurm-smd-dev_${DEB_VERSION}_amd64_u2404.deb 2>/dev/null || true
-          apt-get install -f -y
+          sudo apt-get install -f -y
 
       - name: 🔨 Build & Install Plugin
         run: |
