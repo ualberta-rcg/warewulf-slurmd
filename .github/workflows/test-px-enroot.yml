@@ -1,0 +1,197 @@
+# =============================================================================
+# Pyxis + Enroot Stack Test (node image)
+# =============================================================================
+# Proves the container stack pieces work with the DEBs committed in
+# slurm-debs/ (u2404) before any -px-er image is published:
+#   Job 1: build spank_pyxis.so against the repo's own slurm-smd-dev DEB and
+#          assert `srun --help` registers the --container-* options.
+#   Job 2: install the latest enroot .deb and assert the binary runs.
+#   Job 3: dry-run the conditional Dockerfile stage (build only, no push,
+#          kernel/NVIDIA off for speed).
+#
+# Version resolution mirrors the Slurm tag detection in this repo's DEB
+# workflow: PYXIS_REF / ENROOT_VERSION inputs win; empty = latest release.
+# =============================================================================
+name: Test Pyxis+Enroot Stack
+
+on:
+  workflow_dispatch:
+    inputs:
+      PYXIS_REF:
+        description: 'Optional: pyxis tag/branch/commit (e.g. v0.24.0). Leave empty for latest release.'
+        required: false
+        default: ''
+      ENROOT_VERSION:
+        description: 'Optional: enroot release tag (e.g. v4.2.1). Leave empty for latest.'
+        required: false
+        default: ''
+  push:
+    branches:
+      - main
+      - latest
+    paths:
+      - 'dockerfile'
+      - '.github/workflows/test-px-enroot.yml'
+
+jobs:
+  plugin-test:
+    name: 🧪 Build & Load Plugin
+    runs-on: ubuntu-24.04
+    steps:
+      - name: 🛠️ Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: 🎯 Resolve Pyxis Ref
+        id: pyxisref
+        run: |
+          set -e
+          if [ -n "${{ github.event.inputs.PYXIS_REF }}" ]; then
+            REF="${{ github.event.inputs.PYXIS_REF }}"
+            echo "✅ Using manual pyxis ref: $REF"
+          else
+            REF=$(curl -s https://api.github.com/repos/NVIDIA/pyxis/tags \
+              | jq -r '.[].name' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n1)
+            [ -z "$REF" ] && { echo "❌ Could not determine latest pyxis tag."; exit 1; }
+            echo "🔬 Detected latest pyxis release: $REF"
+          fi
+          echo "ref=$REF" >> $GITHUB_OUTPUT
+
+      - name: 📥 Clone Pyxis
+        run: |
+          set -e
+          git clone --depth 1 --branch "${{ steps.pyxisref.outputs.ref }}" \
+            https://github.com/NVIDIA/pyxis /tmp/pyxis
+
+      - name: 📦 Install Slurm DEBs (from repo)
+        run: |
+          set -e
+          DEB_VERSION=$(find slurm-debs -maxdepth 1 -name 'slurm-smd_*_amd64_u2404.deb' \
+            | sed -E 's/.*slurm-smd_([0-9]+\.[0-9]+\.[0-9]+-[0-9]+)_amd64_u2404\.deb/\1/' \
+            | sort -V | tail -n1)
+          [ -z "$DEB_VERSION" ] && { echo "::error::No u2404 DEBs found"; exit 1; }
+          echo "Testing against Slurm $DEB_VERSION"
+          dpkg -i slurm-debs/slurm-smd_${DEB_VERSION}_amd64_u2404.deb \
+                  slurm-debs/slurm-smd-client_${DEB_VERSION}_amd64_u2404.deb \
+                  slurm-debs/slurm-smd-dev_${DEB_VERSION}_amd64_u2404.deb 2>/dev/null || true
+          apt-get install -f -y
+
+      - name: 🔨 Build & Install Plugin
+        run: |
+          set -e
+          if [ ! -f /usr/include/slurm/spank.h ]; then
+            echo "::error::spank.h missing — slurm-smd-dev did not install"
+            dpkg -l | grep slurm-smd || true
+            exit 1
+          fi
+          make -C /tmp/pyxis 2>&1 | tee /tmp/pyxis-build.log || {
+            echo "::error::pyxis build failed: $(tail -n8 /tmp/pyxis-build.log | tr '\n' ' ' | cut -c1-500)"
+            exit 1
+          }
+          install -m 644 /tmp/pyxis/spank_pyxis.so /usr/lib/x86_64-linux-gnu/slurm/
+
+      - name: 🧪 srun Plugin Load Test
+        run: |
+          set -e
+          mkdir -p /etc/slurm/plugstack.d
+          echo "required /usr/lib/x86_64-linux-gnu/slurm/spank_pyxis.so" \
+            > /etc/slurm/plugstack.d/pyxis.conf
+          echo "include /etc/slurm/plugstack.d/*" > /etc/slurm/plugstack.conf
+          cat > /etc/slurm/slurm.conf <<EOF
+          ClusterName=pxtest
+          SlurmctldHost=localhost(127.0.0.1)
+          PlugStackConfig=/etc/slurm/plugstack.conf
+          EOF
+          COUNT=$(srun --help 2>&1 | grep -c -- '--container' || true)
+          echo "srun registered $COUNT --container-* options"
+          [ "$COUNT" -ge 1 ] || { echo "::error::pyxis options not registered"; exit 1; }
+          echo "✅ spank_pyxis.so loads and registers with srun"
+
+  enroot-test:
+    name: 🧪 Enroot Install & Run
+    runs-on: ubuntu-24.04
+    steps:
+      - name: 🎯 Resolve Enroot Release
+        id: enrootver
+        run: |
+          set -e
+          if [ -n "${{ github.event.inputs.ENROOT_VERSION }}" ]; then
+            TAG="${{ github.event.inputs.ENROOT_VERSION }}"
+          else
+            TAG=$(curl -s https://api.github.com/repos/NVIDIA/enroot/releases/latest | jq -r '.tag_name')
+          fi
+          [ -z "$TAG" ] || [ "$TAG" = "null" ] && { echo "::error::Could not resolve enroot release"; exit 1; }
+          URL=$(curl -s "https://api.github.com/repos/NVIDIA/enroot/releases/tags/$TAG" \
+            | jq -r '.assets[] | select(.name | test("^enroot_[0-9].*_amd64\\.deb$")) | .browser_download_url' | head -n1)
+          [ -z "$URL" ] || [ "$URL" = "null" ] && { echo "::error::No enroot amd64.deb asset for $TAG"; exit 1; }
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "url=$URL" >> $GITHUB_OUTPUT
+
+      - name: 📦 Install Enroot + uidmap
+        run: |
+          set -e
+          curl -sL -o /tmp/enroot.deb "${{ steps.enrootver.outputs.url }}"
+          sudo dpkg -i /tmp/enroot.deb || sudo apt-get install -f -y
+          sudo apt-get install -y uidmap
+
+      - name: 🧪 Enroot Runs
+        run: |
+          set -e
+          enroot version
+          echo "✅ enroot (${{ steps.enrootver.outputs.tag }}) installed and executes"
+
+  docker-dryrun:
+    name: 🐳 Dry-run -px-er Image Build
+    runs-on: ubuntu-24.04
+    needs: [plugin-test, enroot-test]
+    steps:
+      - name: 🛠️ Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: 🎯 Resolve Versions
+        id: vers
+        run: |
+          set -e
+          REF="${{ github.event.inputs.PYXIS_REF }}"
+          [ -z "$REF" ] && REF=$(curl -s https://api.github.com/repos/NVIDIA/pyxis/tags \
+            | jq -r '.[].name' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n1)
+          TAG="${{ github.event.inputs.ENROOT_VERSION }}"
+          [ -z "$TAG" ] && TAG=$(curl -s https://api.github.com/repos/NVIDIA/enroot/releases/latest | jq -r '.tag_name')
+          URL=$(curl -s "https://api.github.com/repos/NVIDIA/enroot/releases/tags/$TAG" \
+            | jq -r '.assets[] | select(.name | test("^enroot_[0-9].*_amd64\\.deb$")) | .browser_download_url' | head -n1)
+          { [ -z "$REF" ] || [ -z "$URL" ] || [ "$URL" = "null" ]; } && { echo "::error::version resolution failed"; exit 1; }
+          echo "pyxisref=$REF" >> $GITHUB_OUTPUT
+          echo "enrooturl=$URL" >> $GITHUB_OUTPUT
+
+      - name: 📦 Stage pxstage
+        run: |
+          set -e
+          mkdir -p pxstage
+          git clone --depth 1 --branch "${{ steps.vers.outputs.pyxisref }}" \
+            https://github.com/NVIDIA/pyxis ./pxstage/pyxis
+          rm -rf ./pxstage/pyxis/.git
+          curl -sL -o ./pxstage/enroot.deb "${{ steps.vers.outputs.enrooturl }}"
+          ls -la ./pxstage/
+
+      - name: 🐳 Build -px-er Image (no push, no kernel/NVIDIA)
+        run: |
+          set -o pipefail
+          # committed slurm-debs/ is the context; convert 26.05.4-1 -> 26-05-4-1
+          SLURM_VERSION=$(ls slurm-debs/slurm-smd_*_amd64_u2404.deb \
+            | sed -E 's/.*slurm-smd_([0-9.]+-[0-9]+)_amd64_u2404\.deb/\1/' \
+            | sort -V | tail -n1 | tr '.' '-')
+          docker build \
+            --build-arg PYXIS_ENABLED=true \
+            --build-arg SLURM_VERSION=${SLURM_VERSION} \
+            --build-arg KERNEL_INSTALL_ENABLED=false \
+            --build-arg NVIDIA_INSTALL_ENABLED=false \
+            -t ww-slurmd:px-er-dryrun . 2>&1 | tee /tmp/px-build.log || {
+            echo "::error::-px-er build failed: $(grep -vE '^ #[0-9]+ \[|^ *[0-9]+ \||^>>>|^ ---$' /tmp/px-build.log | tail -n8 | tr '\n' ' ' | cut -c1-800)"
+            exit 1
+          }
+          # No ENTRYPOINT in this image; verify the stack landed
+          docker run --rm ww-slurmd:px-er-dryrun ls -la /usr/lib/x86_64-linux-gnu/slurm/spank_pyxis.so || {
+            echo "::error::spank_pyxis.so missing from image"; exit 1
+          }
+          docker run --rm ww-slurmd:px-er-dryrun enroot version || {
+            echo "::error::enroot missing/broken in image"; exit 1
+          }

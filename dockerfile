@@ -261,6 +261,21 @@ RUN mkdir -p /slurm-debs && \
 
 RUN dpkg -i /slurm-debs/*.deb || (echo "⚠️ dpkg failed, attempting fix..." && apt-get install -f -y)
 
+# --- 9b. Optional Pyxis/Enroot Container Stack (PYXIS_ENABLED=true) ---
+# Staged by the workflow: pyxis/ (source at resolved ref) and enroot.deb.
+# Installs the SPANK plugin, enroot runtime and uidmap together. The dev
+# headers come from the staged slurm-smd-dev DEB, so the plugin ABI always
+# matches the Slurm in this image. No-op when disabled.
+ARG PYXIS_ENABLED="false"
+COPY pxstage/ /pxstage/
+RUN if [ "$PYXIS_ENABLED" = "true" ]; then \
+        make -C /pxstage/pyxis && \
+        install -m 644 /pxstage/pyxis/spank_pyxis.so /usr/lib/x86_64-linux-gnu/slurm/ && \
+        dpkg -i /pxstage/enroot.deb || apt-get install -f -y && \
+        apt-get install -y uidmap; \
+    fi && \
+    rm -rf /pxstage
+
 # --- 10. Configure Autologin based on DISABLE_AUTOLOGIN ---
 RUN if [ "$DISABLE_AUTOLOGIN" != "true" ]; then \
         mkdir -p /etc/systemd/system/getty@tty1.service.d && \

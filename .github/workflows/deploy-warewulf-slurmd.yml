@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - latest
+      - main
+    tags:
+      - 'px-*'
   workflow_dispatch:
     inputs:
       SLURM_VERSION_OVERRIDE:
@@ -42,6 +45,22 @@ on:
           - '1' # True
           - '0' # False
         default: '1'
+      PYXIS_ENABLED:
+        description: 'Enable pyxis+enroot container stack (SPANK plugin, enroot, uidmap).'
+        required: true
+        type: choice
+        options:
+          - '1' # True
+          - '0' # False
+        default: '0'
+      PYXIS_REF:
+        description: 'Optional: pyxis tag/branch/commit (e.g. v0.24.0). Use "0" for latest release.'
+        required: false
+        default: '0'
+      ENROOT_VERSION:
+        description: 'Optional: enroot release tag (e.g. v4.2.1). Use "0" for latest.'
+        required: false
+        default: '0'
   schedule:
     - cron: '0 3 * * 1' # Every Monday at 3:00 AM UTC
 
@@ -78,6 +97,11 @@ jobs:
 
           INPUT_FIRSTBOOT_ENABLED: ${{ github.event.inputs.FIRSTBOOT_ENABLED }}
           VAR_FIRSTBOOT_ENABLED: ${{ vars.FIRSTBOOT_ENABLED }}
+
+          INPUT_PYXIS_ENABLED: ${{ github.event.inputs.PYXIS_ENABLED }}
+          VAR_PYXIS_ENABLED: ${{ vars.PYXIS_ENABLED }}
+          INPUT_PYXIS_REF: ${{ github.event.inputs.PYXIS_REF }}
+          INPUT_ENROOT_VERSION: ${{ github.event.inputs.ENROOT_VERSION }}
         run: |
           set -e # Exit on any error
           
@@ -227,10 +251,50 @@ jobs:
             echo "NVIDIA Install is DISABLED."
           fi
 
+          echo -e "\n## 7. Processing Pyxis/Enroot Container Stack ##"
+          IS_PYXIS_ENABLED=false
+          PYXIS_VAL="0"
+          if [ -n "$INPUT_PYXIS_ENABLED" ]; then PYXIS_VAL="$INPUT_PYXIS_ENABLED";
+          elif [ -n "$VAR_PYXIS_ENABLED" ]; then PYXIS_VAL="$VAR_PYXIS_ENABLED"; fi
+          # px-* tag pushes enable the stack without dispatch inputs
+          case "$GITHUB_REF" in refs/tags/px-*) PYXIS_VAL="1";; esac
+          if [ "$(lower "$PYXIS_VAL")" = "1" ] || [ "$(lower "$PYXIS_VAL")" = "true" ]; then IS_PYXIS_ENABLED=true; fi
+
+          PYXIS_REF_RESOLVED=""
+          ENROOT_URL="0"
+          if [ "$IS_PYXIS_ENABLED" = "true" ]; then
+            if [ -n "$INPUT_PYXIS_REF" ] && [ "$INPUT_PYXIS_REF" != "0" ]; then
+              PYXIS_REF_RESOLVED="$INPUT_PYXIS_REF"
+              echo "🎯 Using manual pyxis ref: $PYXIS_REF_RESOLVED"
+            else
+              PYXIS_REF_RESOLVED=$(curl -s https://api.github.com/repos/NVIDIA/pyxis/tags \
+                | jq -r '.[].name' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n1)
+              [ -z "$PYXIS_REF_RESOLVED" ] && { echo "❌ ERROR: Could not determine latest pyxis tag."; exit 1; }
+              echo "🔬 Detected latest pyxis release: $PYXIS_REF_RESOLVED"
+            fi
+            if [ -n "$INPUT_ENROOT_VERSION" ] && [ "$INPUT_ENROOT_VERSION" != "0" ]; then
+              ENROOT_TAG="$INPUT_ENROOT_VERSION"
+              echo "🎯 Using manual enroot release: $ENROOT_TAG"
+            else
+              ENROOT_TAG=$(curl -s https://api.github.com/repos/NVIDIA/enroot/releases/latest | jq -r '.tag_name')
+              [ -z "$ENROOT_TAG" ] || [ "$ENROOT_TAG" = "null" ] && { echo "❌ ERROR: Could not determine latest enroot release."; exit 1; }
+              echo "🔬 Detected latest enroot release: $ENROOT_TAG"
+            fi
+            ENROOT_URL=$(curl -s "https://api.github.com/repos/NVIDIA/enroot/releases/tags/$ENROOT_TAG" \
+              | jq -r '.assets[] | select(.name | test("^enroot_[0-9].*_amd64\\.deb$")) | .browser_download_url' | head -n1)
+            [ -z "$ENROOT_URL" ] || [ "$ENROOT_URL" = "null" ] && { echo "❌ ERROR: Could not find enroot amd64.deb asset for $ENROOT_TAG."; exit 1; }
+            echo "✅ Enroot asset: $ENROOT_URL"
+          else
+            echo "Pyxis/Enroot stack is DISABLED."
+          fi
+
           echo -e "\n## 6. Final Build Configuration ##"
           echo "SLURM_VERSION=${TARGET_SLURM_VERSION}" >> $GITHUB_OUTPUT
           echo "NVIDIA_INSTALL_ENABLED=${IS_NVIDIA_ENABLED}" >> $GITHUB_OUTPUT
           echo "NVIDIA_DRIVER_URL=${NVIDIA_DRIVER_URL}" >> $GITHUB_OUTPUT
+          echo "PYXIS_ENABLED=${IS_PYXIS_ENABLED}" >> $GITHUB_OUTPUT
+          echo "PYXIS_REF=${PYXIS_REF_RESOLVED}" >> $GITHUB_OUTPUT
+          echo "ENROOT_URL=${ENROOT_URL}" >> $GITHUB_OUTPUT
           
           echo -e "\n📋 Final Configuration Summary:"
           echo "   SLURM_VERSION: ${TARGET_SLURM_VERSION}"
@@ -270,12 +334,30 @@ jobs:
             fi
           fi
 
+          if [ "${{ steps.config.outputs.PYXIS_ENABLED }}" = "true" ]; then
+            TAG_NAME="${TAG_NAME}-px-er"
+          fi
+
           echo "Generated TAG_NAME: $TAG_NAME"
           echo "TAG_NAME=$TAG_NAME" >> $GITHUB_OUTPUT
           
+      - name: 📥 Stage Pyxis/Enroot Sources
+        run: |
+          set -e
+          mkdir -p pxstage
+          if [ "${{ steps.config.outputs.PYXIS_ENABLED }}" = "true" ]; then
+            echo "📥 Staging pyxis ${{ steps.config.outputs.PYXIS_REF }} and enroot..."
+            git clone --depth 1 --branch "${{ steps.config.outputs.PYXIS_REF }}" \
+              https://github.com/NVIDIA/pyxis ./pxstage/pyxis
+            rm -rf ./pxstage/pyxis/.git
+            curl -sL -o ./pxstage/enroot.deb "${{ steps.config.outputs.ENROOT_URL }}"
+            ls -la ./pxstage/pyxis/Makefile ./pxstage/enroot.deb
+          fi
+
       - name: 🐳 Build Docker Image
         run: |
           docker build \
+            --build-arg PYXIS_ENABLED=${{ steps.config.outputs.PYXIS_ENABLED }} \
             --build-arg SLURM_VERSION=${{ steps.config.outputs.SLURM_VERSION }} \
             --build-arg KERNEL_VERSION=${{ steps.config.outputs.KERNEL_VERSION }} \
             --build-arg DISABLE_AUTOLOGIN=${{ steps.config.outputs.DISABLE_AUTOLOGIN }} \
