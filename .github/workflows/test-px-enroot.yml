@@ -79,6 +79,7 @@ jobs:
       - name: 🔨 Build & Install Plugin
         run: |
           set -e
+          set -o pipefail
           if [ ! -f /usr/include/slurm/spank.h ]; then
             echo "::error::spank.h missing — slurm-smd-dev did not install"
             dpkg -l | grep slurm-smd || true
@@ -88,16 +89,16 @@ jobs:
             echo "::error::pyxis build failed: $(tail -n8 /tmp/pyxis-build.log | tr '\n' ' ' | cut -c1-500)"
             exit 1
           }
-          install -m 644 /tmp/pyxis/spank_pyxis.so /usr/lib/x86_64-linux-gnu/slurm/
+          sudo install -m 644 /tmp/pyxis/spank_pyxis.so /usr/lib/x86_64-linux-gnu/slurm/
 
       - name: 🧪 srun Plugin Load Test
         run: |
           set -e
-          mkdir -p /etc/slurm/plugstack.d
+          sudo mkdir -p /etc/slurm/plugstack.d
           echo "required /usr/lib/x86_64-linux-gnu/slurm/spank_pyxis.so" \
-            > /etc/slurm/plugstack.d/pyxis.conf
-          echo "include /etc/slurm/plugstack.d/*" > /etc/slurm/plugstack.conf
-          cat > /etc/slurm/slurm.conf <<EOF
+            | sudo tee /etc/slurm/plugstack.d/pyxis.conf > /dev/null
+          echo "include /etc/slurm/plugstack.d/*" | sudo tee /etc/slurm/plugstack.conf > /dev/null
+          sudo tee /etc/slurm/slurm.conf > /dev/null <<EOF
           ClusterName=pxtest
           SlurmctldHost=localhost(127.0.0.1)
           PlugStackConfig=/etc/slurm/plugstack.conf
