@@ -277,12 +277,13 @@ RUN if [ "$PYXIS_ENABLED" = "true" ]; then \
         install -m 644 /pxstage/pyxis/spank_pyxis.so /usr/lib/x86_64-linux-gnu/slurm/ && \
         dpkg -i /pxstage/enroot.deb || apt-get install -f -y && \
         apt-get install -y uidmap libbsd-dev patch && \
-        tar -xf /pxstage/enroot-src.tar.gz -C /tmp && \
-        patch -d /tmp/enroot-* -p1 < /tmp/enroot-switchroot-rootfs.patch && \
-        gcc -std=c99 -O2 -o /tmp/enroot-switchroot /tmp/enroot-*/bin/enroot-switchroot.c -I/tmp/enroot-*/bin -lbsd && \
+        mkdir -p /tmp/enroot-src && \
+        tar -xf /pxstage/enroot-src.tar.gz -C /tmp/enroot-src --strip-components=1 && \
+        patch -d /tmp/enroot-src -p1 < /tmp/enroot-switchroot-rootfs.patch && \
+        gcc -std=c99 -O2 -o /tmp/enroot-switchroot /tmp/enroot-src/bin/enroot-switchroot.c -I/tmp/enroot-src/bin -lbsd && \
         install -m 755 /tmp/enroot-switchroot /usr/bin/enroot-switchroot; \
     fi && \
-    rm -rf /pxstage /tmp/enroot-* /tmp/enroot-switchroot*
+    rm -rf /pxstage /tmp/enroot-src /tmp/enroot-switchroot /tmp/enroot-switchroot-rootfs.patch
 
 # --- 10. Configure Autologin based on DISABLE_AUTOLOGIN ---
 RUN if [ "$DISABLE_AUTOLOGIN" != "true" ]; then \
