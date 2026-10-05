@@ -282,6 +282,7 @@ RUN if [ "$PYXIS_ENABLED" = "true" ]; then \
         patch -d /tmp/enroot-src -p1 < /tmp/enroot-switchroot-rootfs.patch && \
         gcc -std=c99 -O2 -o /tmp/enroot-switchroot /tmp/enroot-src/bin/enroot-switchroot.c -I/tmp/enroot-src/bin -lbsd && \
         install -m 755 /tmp/enroot-switchroot /usr/bin/enroot-switchroot; \
+        printf 'd /run/enroot 1777 root root -\n' > /etc/tmpfiles.d/enroot.conf; \
     fi && \
     rm -rf /pxstage /tmp/enroot-src /tmp/enroot-switchroot /tmp/enroot-switchroot-rootfs.patch
 
