@@ -312,6 +312,7 @@ jobs:
           echo "PYXIS_ENABLED=${IS_PYXIS_ENABLED}" >> $GITHUB_OUTPUT
           echo "PYXIS_REF=${PYXIS_REF_RESOLVED}" >> $GITHUB_OUTPUT
           echo "ENROOT_URL=${ENROOT_URL}" >> $GITHUB_OUTPUT
+          echo "ENROOT_TAG=${ENROOT_TAG}" >> $GITHUB_OUTPUT
           
           echo -e "\n📋 Final Configuration Summary:"
           echo "   SLURM_VERSION: ${TARGET_SLURM_VERSION}"
@@ -369,12 +370,14 @@ jobs:
             rm -rf ./pxstage/pyxis/.git
             curl -sL -o ./pxstage/enroot.deb "${{ steps.config.outputs.ENROOT_URL }}"
             # matching enroot source for the patched enroot-switchroot build
-            curl -sL -o ./pxstage/enroot-src.tar.gz "https://github.com/NVIDIA/enroot/archive/refs/tags/$ENROOT_TAG.tar.gz"
+            curl -sfL -o ./pxstage/enroot-src.tar.gz "https://github.com/NVIDIA/enroot/archive/refs/tags/${{ steps.config.outputs.ENROOT_TAG }}.tar.gz"
+            tar -tzf ./pxstage/enroot-src.tar.gz >/dev/null
             ls -la ./pxstage/pyxis/Makefile ./pxstage/enroot.deb ./pxstage/enroot-src.tar.gz
           fi
 
       - name: 🐳 Build Docker Image
         run: |
+          set -o pipefail
           docker build \
             --build-arg PYXIS_ENABLED=${{ steps.config.outputs.PYXIS_ENABLED }} \
             --build-arg SLURM_VERSION=${{ steps.config.outputs.SLURM_VERSION }} \
@@ -384,7 +387,10 @@ jobs:
             --build-arg NVIDIA_DRIVER_URL=${{ steps.config.outputs.NVIDIA_DRIVER_URL }} \
             --build-arg FIRSTBOOT_ENABLED=${{ steps.config.outputs.FIRSTBOOT_ENABLED }} \
             --build-arg KERNEL_INSTALL_ENABLED=${{ steps.config.outputs.KERNEL_INSTALL_ENABLED }} \
-            -t ${{ secrets.DOCKER_HUB_REPO }}:${{ steps.taggen.outputs.TAG_NAME }} .
+            -t ${{ secrets.DOCKER_HUB_REPO }}:${{ steps.taggen.outputs.TAG_NAME }} . 2>&1 | tee /tmp/build.log || {
+            echo "::error::docker build failed: $(grep -vE '^ #[0-9]+ \[|^ *[0-9]+ \||^>>>|^ ---$' /tmp/build.log | tail -n8 | tr '\n' ' ' | cut -c1-800)"
+            exit 1
+          }
 
       - name: 🚀 Login to DockerHub
         run: |
