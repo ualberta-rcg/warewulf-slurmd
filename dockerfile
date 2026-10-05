@@ -271,13 +271,18 @@ RUN dpkg -i /slurm-debs/*.deb || (echo "⚠️ dpkg failed, attempting fix..." &
 # matches the Slurm in this image. No-op when disabled.
 ARG PYXIS_ENABLED="false"
 COPY pxstage/ /pxstage/
+COPY enroot-switchroot-rootfs.patch /tmp/
 RUN if [ "$PYXIS_ENABLED" = "true" ]; then \
         make -C /pxstage/pyxis && \
         install -m 644 /pxstage/pyxis/spank_pyxis.so /usr/lib/x86_64-linux-gnu/slurm/ && \
         dpkg -i /pxstage/enroot.deb || apt-get install -f -y && \
-        apt-get install -y uidmap; \
+        apt-get install -y uidmap libbsd-dev && \
+        tar -xf /pxstage/enroot-src.tar.gz -C /tmp && \
+        patch -d /tmp/enroot-* -p1 < /tmp/enroot-switchroot-rootfs.patch && \
+        gcc -std=c99 -O2 -o /tmp/enroot-switchroot /tmp/enroot-*/bin/enroot-switchroot.c -I/tmp/enroot-*/bin -lbsd && \
+        install -m 755 /tmp/enroot-switchroot /usr/bin/enroot-switchroot; \
     fi && \
-    rm -rf /pxstage
+    rm -rf /pxstage /tmp/enroot-* /tmp/enroot-switchroot*
 
 # --- 10. Configure Autologin based on DISABLE_AUTOLOGIN ---
 RUN if [ "$DISABLE_AUTOLOGIN" != "true" ]; then \

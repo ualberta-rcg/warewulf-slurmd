@@ -1,0 +1,49 @@
+diff --git a/bin/enroot-switchroot.c b/bin/enroot-switchroot.c
+index 71d5dce..5dab6b4 100644
+--- a/bin/enroot-switchroot.c
++++ b/bin/enroot-switchroot.c
+@@ -204,18 +204,33 @@ switch_root(const char *rootfs)
+ 
+         if (fchdir(newroot) < 0)
+                 goto err;
+-        if ((int)syscall(SYS_pivot_root, ".", ".") < 0)
+-                goto err;
+-        if (fchdir(oldroot) < 0)
+-                goto err;
+-        if (mount(NULL, ".", NULL, MS_REC|MS_SLAVE, NULL) < 0)
+-                goto err;
+-        if (umount2(".", MNT_DETACH) < 0)
+-                goto err;
+-        if (fchdir(newroot) < 0)
+-                goto err;
+-        if (chroot(".") < 0)
++        if ((int)syscall(SYS_pivot_root, ".", ".") == 0) {
++                if (fchdir(oldroot) < 0)
++                        goto err;
++                if (mount(NULL, ".", NULL, MS_REC|MS_SLAVE, NULL) < 0)
++                        goto err;
++                if (umount2(".", MNT_DETACH) < 0)
++                        goto err;
++                if (fchdir(newroot) < 0)
++                        goto err;
++                if (chroot(".") < 0)
++                        goto err;
++        } else if (errno == EINVAL) {
++                /* Stateless (initramfs/rootfs) systems cannot pivot_root
++                 * (NVIDIA/enroot#200). Fall back to moving the container
++                 * root over / and chrooting, as runc and nvidia-container-
++                 * cli --no-pivot do. The old root stays shadowed beneath. */
++                if (mount(rootfs, rootfs, NULL, MS_REC|MS_SLAVE, NULL) < 0)
++                        goto err;
++                if (mount(rootfs, "/", NULL, MS_MOVE, NULL) < 0)
++                        goto err;
++                if (fchdir(newroot) < 0)
++                        goto err;
++                if (chroot(".") < 0)
++                        goto err;
++        } else {
+                 goto err;
++        }
+         if (unshare(CLONE_NEWCGROUP) < 0 && errno != EINVAL)
+                 goto err;
+ 

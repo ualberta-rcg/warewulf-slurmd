@@ -368,7 +368,9 @@ jobs:
               https://github.com/NVIDIA/pyxis ./pxstage/pyxis
             rm -rf ./pxstage/pyxis/.git
             curl -sL -o ./pxstage/enroot.deb "${{ steps.config.outputs.ENROOT_URL }}"
-            ls -la ./pxstage/pyxis/Makefile ./pxstage/enroot.deb
+            # matching enroot source for the patched enroot-switchroot build
+            curl -sL -o ./pxstage/enroot-src.tar.gz "https://github.com/NVIDIA/enroot/archive/refs/tags/$ENROOT_TAG.tar.gz"
+            ls -la ./pxstage/pyxis/Makefile ./pxstage/enroot.deb ./pxstage/enroot-src.tar.gz
           fi
 
       - name: 🐳 Build Docker Image
