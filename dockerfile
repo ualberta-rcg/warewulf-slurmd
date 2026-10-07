@@ -268,7 +268,10 @@ RUN dpkg -i /slurm-debs/*.deb || (echo "⚠️ dpkg failed, attempting fix..." &
 # Staged by the workflow: pyxis/ (source at resolved ref) and enroot.deb.
 # Installs the SPANK plugin, enroot runtime and uidmap together. The dev
 # headers come from the staged slurm-smd-dev DEB, so the plugin ABI always
-# matches the Slurm in this image. No-op when disabled.
+# matches the Slurm in this image. squashfuse + fuse-overlayfs enable
+# pyxis use_squashfuse=true (direct RO-sqsh start: no enroot-create
+# extraction, nothing written to the user's home/quota). No-op when
+# disabled.
 ARG PYXIS_ENABLED="false"
 COPY pxstage/ /pxstage/
 COPY enroot-switchroot-rootfs.patch /tmp/
@@ -276,7 +279,7 @@ RUN if [ "$PYXIS_ENABLED" = "true" ]; then \
         make -C /pxstage/pyxis && \
         install -m 644 /pxstage/pyxis/spank_pyxis.so /usr/lib/x86_64-linux-gnu/slurm/ && \
         dpkg -i /pxstage/enroot.deb || apt-get install -f -y && \
-        apt-get install -y uidmap libbsd-dev patch && \
+        apt-get install -y uidmap libbsd-dev patch squashfuse fuse-overlayfs && \
         mkdir -p /tmp/enroot-src && \
         tar -xf /pxstage/enroot-src.tar.gz -C /tmp/enroot-src --strip-components=1 && \
         patch -d /tmp/enroot-src -p1 < /tmp/enroot-switchroot-rootfs.patch && \
